@@ -6,32 +6,35 @@
 :Organizations: eXascale lab <http://exascale.info/>, Lumais <http://www.lumais.com/>
 :Date: 2019-03
 """
+from __future__ import print_function, division  # Required for stderr output, must be the first import
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import defaultdict
 # from gensim.models import Word2Vec, KeyedVectors
-from six import iteritems
 from sklearn.multiclass import OneVsRestClassifier
 # from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
-from scipy.spatial.distance import squareform
-from scipy.spatial.distance import pdist
-from scipy.spatial.distance import cdist
-
+from scipy.spatial.distance import squareform, pdist, cdist
+# from scipy.sparse import dok_matrix, coo_matrix
 from sklearn.metrics import f1_score
-from scipy.io import loadmat
-from scipy.io import savemat
+from scipy.io import loadmat, savemat
 from sklearn.utils import shuffle as skshuffle
 from sklearn.preprocessing import MultiLabelBinarizer
 
-import numpy
-import sys
+try:
+	# External package: pip install future
+	from future.utils import viewitems  #pylint: disable=W0611
+except ImportError:
+	viewitems = lambda dct: viewMethod(dct, 'items')()  #pylint: disable=W0611
+
+import numpy as np
+# import sys
 
 class TopKRanker(OneVsRestClassifier):
 	def predict(self, gram_test, top_k_list):
 		assert gram_test.shape[0] == len(top_k_list)
-		probs = numpy.asarray(super(TopKRanker, self).predict_proba(gram_test))
+		probs = np.asarray(super(TopKRanker, self).predict_proba(gram_test))
 		all_labels = []
 		for i, k in enumerate(top_k_list):
 			probs_ = probs[i, :]
@@ -39,22 +42,139 @@ class TopKRanker(OneVsRestClassifier):
 			all_labels.append(labels)
 		return all_labels
 
-def sparse2graph(x):
-	G = defaultdict(lambda: set())
-	cx = x.tocoo()
-	for i,j,v in zip(cx.row, cx.col, cx.data):
-		G[i].add(j)
-	return {str(k): [str(x) for x in v] for k,v in iteritems(G)}
+# def sparse2graph(x):
+# 	G = defaultdict(lambda: set())
+# 	cx = x.tocoo()
+# 	for i,j,v in zip(cx.row, cx.col, cx.data):
+# 		G[i].add(j)
+# 	return {str(k): [str(x) for x in v] for k,v in viewitems(G)}
+#
+# def kernel_hamming(X, Y):
+#	return np.count_nonzero(a==b)/len(X)
 
-#def kernel_hamming(X, Y):
-	#return np.count_nonzero(a==b)/len(X)
+
+def loadNvc(nvcfile):
+	"""Load network embeddings from the specified file in the NVC format
+
+	nvcfile: str  - file name
+
+	return
+		embeds: matrix  - embeddings matrix in the Compressed Sparse Column format
+		dimws: array  - dimensions weights or None
+	"""
+	hdr = False  # Whether the header is parsed
+	ftr = False # Whether the footer is parsed
+	ndsnum = 0  # The number of nodes
+	numbered = False
+	dimnum = 0  # The number of dimensions (reprsentative clusters)
+	dimws = None  # Dimension weights
+	COMPR_NONE = 0
+	COMPR_RLE = 1
+	COMPR_SPARSE = 2
+	COMPR_CLUSTER = 4  # Default
+	compr = COMPR_CLUSTER  # Compression type
+	VAL_BIT = 0
+	VAL_UINT8 = 1
+	VAL_UINT16 = 2
+	VAL_FLOAT32 = 4
+	valfmt = VAL_UINT8  # Falue format
+	hdrvals = {'nodes:': None, 'value:': None, 'compression:': None, 'numbered:': None}
+	# iline = 0  # Payload line index (dimension of node)
+	dimens = []  # Dimensions array for the CLUSTER encoding
+	nodes = []  # Nodes array for the non CLUSTER encodings
+
+	for ln in nvcfile:
+		if not ln:
+			continue
+		if ln[0] == '#':
+			if not hdr:
+				# Parse the header
+				# Consider ',' separator besides the space
+				ln = ' '.join(ln[1:].split[','])
+				toks = ln.split(None, len(hdrvals) * 2)
+				while toks:
+					if len(toks) >= 2:
+						key = toks[0].lower()
+						if key not in hdrvals:
+							break
+						hdr = True
+						hdrvals[key] = toks[1]
+						toks = toks[2:]
+					else:
+						del toks[:]
+				if hdr:
+					ndsnum = np.uint32(hdrvals.get('nodes:', ndsnum))
+					numbered = bool(hdrvals.get('numbered:', numbered))
+					comprstr = hdrvals.get('compression:', '').lower()
+					if comprstr == 'none':
+						compr = COMPR_NONE
+					elif comprstr == 'rle':
+						compr = COMPR_RLE
+					elif comprstr == 'sparse':
+						compr = COMPR_SPARSE
+					elif comprstr == 'cluster':
+						compr = COMPR_CLUSTER
+					else:
+						raise ValueError('Unknown compression format: ' + compr)
+					valstr = hdrvals.get('value:', '').lower()
+					if valstr == 'bit':
+						valfmt = VAL_BIT
+					elif valstr == 'uint8':
+						valfmt = VAL_UINT8
+					elif valstr == 'uint16':
+						valfmt = VAL_UINT16
+					elif valstr == 'float32':
+						valfmt = VAL_FLOAT32
+					else:
+						raise ValueError('Unknown value format: ' + valstr)
+			elif not ftr:
+				# Parse the footer
+				vals = ln[1:].split(None)
+				if not vals or vals[0].lower() != 'dimensions:':
+					continue
+				ftr = True
+				if len(vals) <= 1:
+					continue
+				key = vals[1]
+				if key.endswith('>'):
+					key.pop()
+				dimnum = np.uint32(key)
+				vals = vals[2:]
+				if vals and vals[0].find(':') != -1:
+					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+						dimws = np.array([1. / np.uint16(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
+					else:
+						dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
+			# Parse the body
+			if numbered:
+				# Omit the cluster or node id prefix of each row
+				ln = ln.split('>', 1)[1]
+			if compr == COMPR_CLUSTER:
+				vals = ln.split()
+				if valfmt == VAL_BIT:
+					# tuple(ndids, 1)
+					dimens.append((np.array([np.uint32(v) for v in vals], dtype=np.uint32), 1))
+				elif valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+					nids, vals = zip(*[v.split(':') for v in vals])
+					vals = [1./np.uint16(v) for v in vals]
+					dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
+				else:
+					assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
+					nids, vals = zip(*[v.split(':') for v in vals])
+					dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
+			else:
+				pass
+	# dok_matrix((), dtype=np.float32)
+	pass
 
 
 def main():
+	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
+
 	parser = ArgumentParser("scoring",
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
-	parser.add_argument("--emb", required=True, help='Embeddings file')
+	parser.add_argument("--emb", required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("--network", required=True,
 						help='A .mat file containing the adjacency matrix and node labels of the input network.')
 	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -66,21 +186,25 @@ def main():
 	parser.add_argument("--outputfile", default='res.mat', help='Number of shuffles.')
 	parser.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
-						'By default, only training percents of 10, 50 and 90 are used.')
+						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in training_percents_dfl])))
 
 	args = parser.parse_args()
 	# 0. Files
 	embeddings_file = args.emb
-	matfile = args.network
 
 	# 1. Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
-	mat = loadmat(embeddings_file)
-	# Map nodes to their features
-	features_matrix = mat['embs']
+	if args.emb.endswith('.mat'):
+		mat = loadmat(embeddings_file)
+		# Map nodes to their features
+		features_matrix = mat['embs']
+	elif args.emb.endswith('.nvc'):
+		features_matrix = loadNvc(args.emb)
+	else:
+		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
 
 	# 2. Load labels
-	mat = loadmat(matfile)
+	mat = loadmat(args.network)  # Compressed Sparse Column format
 	# A = mat[args.adj_matrix_name]
 	# graph = sparse2graph(A)
 	labels_matrix = mat[args.label_matrix_name]
@@ -88,7 +212,7 @@ def main():
 	mlb = MultiLabelBinarizer(range(labels_count))
 
 	# Map nodes to their features (note:  assumes nodes are labeled as integers 1:N)
-	# features_matrix = numpy.asarray([model[str(node)] for node in range(len(graph))])
+	# features_matrix = np.asarray([model[str(node)] for node in range(len(graph))])
 
 	# 2. Shuffle, to create train/test groups
 	shuffles = []
@@ -99,12 +223,12 @@ def main():
 	# all_results = defaultdict(list)
 
 	if args.all:
-		training_percents = numpy.asarray(range(1, 10)) * .1
+		training_percents = np.asarray(range(1, 10)) * .1
 	else:
-		training_percents = [0.9]  # [0.1, 0.5, 0.9]
+		training_percents = training_percents_dfl
 
 	averages = ["micro", "macro"]
-	res = numpy.zeros([args.num_shuffles, len(training_percents), len(averages)])
+	res = np.zeros([args.num_shuffles, len(training_percents), len(averages)])
 	# for train_percent in training_percents:
 	#     for shuf in shuffles:
 	for ii, train_percent in enumerate(training_percents):
@@ -155,7 +279,7 @@ def main():
 
 			for kk,average in enumerate(averages):
 				res[jj,ii,kk] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
-	res_ave = numpy.mean(res,0);
+	res_ave = np.mean(res,0);
 	print("micro, macro")
 	print(res_ave)
 
@@ -167,7 +291,7 @@ def main():
 	#     print ('Shuffle #%d:   ' % (index + 1), result)
 	#   avg_score = defaultdict(float)
 	#   for score_dict in all_results[train_percent]:
-	#     for metric, score in iteritems(score_dict):
+	#     for metric, score in viewitems(score_dict):
 	#       avg_score[metric] += score
 	#   for metric in avg_score:
 	#     avg_score[metric] /= len(all_results[train_percent])
@@ -177,4 +301,4 @@ def main():
 	savemat(args.outputfile,mdict={'res':res})
 
 if __name__ == "__main__":
-	sys.exit(main())
+	main()
