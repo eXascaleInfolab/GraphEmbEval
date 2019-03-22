@@ -113,9 +113,10 @@ def loadNvc(nvcfile):
 						else:
 							del toks[:]
 					if hdr:
+						print
 						ndsnum = np.uint32(hdrvals.get('nodes:', ndsnum))
 						dimnum = np.uint16(hdrvals.get('dimensions:', dimnum))
-						numbered = bool(hdrvals.get('numbered:', numbered))
+						numbered = int(hdrvals.get('numbered:', numbered))  # Note: bool('0') is True (non-empty string)
 						comprstr = hdrvals.get('compression:', '').lower()
 						if comprstr == 'none':
 							compr = COMPR_NONE
@@ -138,6 +139,7 @@ def loadNvc(nvcfile):
 							valfmt = VAL_FLOAT32
 						else:
 							raise ValueError('Unknown value format: ' + valstr)
+						#print('hdrvals:',hdrvals, '\nnumbered:', numbered)
 				elif not ftr:
 					# Parse the footer
 					vals = ln[1:].split(None, 1)
@@ -253,11 +255,11 @@ def main():
 
 	# 1. Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
-	if args.emb.endswith('.mat'):
+	if args.emb.lower().endswith('.mat'):
 		mat = loadmat(embeddings_file)
 		# Map nodes to their features
 		features_matrix = mat['embs']
-	elif args.emb.endswith('.nvc'):
+	elif args.emb.lower().endswith('.nvc'):
 		features_matrix, dimws = loadNvc(args.emb)
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
