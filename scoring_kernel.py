@@ -65,8 +65,8 @@ def loadNvc(nvcfile):
 	hdr = False  # Whether the header is parsed
 	ftr = False # Whether the footer is parsed
 	ndsnum = 0  # The number of nodes
-	numbered = False
 	dimnum = 0  # The number of dimensions (reprsentative clusters)
+	numbered = False
 	dimws = None  # Dimension weights
 	COMPR_NONE = 0
 	COMPR_RLE = 1
@@ -78,8 +78,8 @@ def loadNvc(nvcfile):
 	VAL_UINT16 = 2
 	VAL_FLOAT32 = 4
 	valfmt = VAL_UINT8  # Falue format
-	hdrvals = {'nodes:': None, 'value:': None, 'compression:': None, 'numbered:': None}
-	# iline = 0  # Payload line index (dimension of node)
+	hdrvals = {'nodes:': None, 'dimensions:': None, 'value:': None, 'compression:': None, 'numbered:': None}
+	irow = 0  # Payload line (matrix row) index (of either dimensions or nodes)
 	dimens = []  # Dimensions array for the CLUSTER encoding
 	nodes = []  # Nodes array for the non CLUSTER encodings
 
@@ -104,6 +104,7 @@ def loadNvc(nvcfile):
 						del toks[:]
 				if hdr:
 					ndsnum = np.uint32(hdrvals.get('nodes:', ndsnum))
+					dimnum = np.uint16(hdrvals.get('dimensions:', dimnum))
 					numbered = bool(hdrvals.get('numbered:', numbered))
 					comprstr = hdrvals.get('compression:', '').lower()
 					if comprstr == 'none':
@@ -129,43 +130,40 @@ def loadNvc(nvcfile):
 						raise ValueError('Unknown value format: ' + valstr)
 			elif not ftr:
 				# Parse the footer
-				vals = ln[1:].split(None)
-				if not vals or vals[0].lower() != 'dimensions:':
+				vals = ln[1:].split(None, 1)
+				if not vals or vals[0].lower() != 'diminfo>':
 					continue
 				ftr = True
 				if len(vals) <= 1:
 					continue
-				key = vals[1]
-				if key.endswith('>'):
-					key.pop()
-				dimnum = np.uint32(key)
-				vals = vals[2:]
+				vals = vals[1].split()
 				if vals and vals[0].find(':') != -1:
-					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						dimws = np.array([1. / np.uint16(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
-					else:
-						dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
-			# Parse the body
-			if numbered:
-				# Omit the cluster or node id prefix of each row
-				ln = ln.split('>', 1)[1]
-			if compr == COMPR_CLUSTER:
-				vals = ln.split()
-				if valfmt == VAL_BIT:
-					# tuple(ndids, 1)
-					dimens.append((np.array([np.uint32(v) for v in vals], dtype=np.uint32), 1))
-				elif valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-					nids, vals = zip(*[v.split(':') for v in vals])
-					vals = [1./np.uint16(v) for v in vals]
-					dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
+					# if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+					# 	dimws = np.array([np.float32(1. / np.uint16(v[v.find(':') + 1:])) for v in vals], dtype = np.float32)
+					# else:
+					dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
+			continue
+		# Parse the body
+		if numbered:
+			# Omit the cluster or node id prefix of each row
+			ln = ln.split('>', 1)[1]
+		if compr == COMPR_CLUSTER:
+			vals = ln.split()
+			if valfmt == VAL_BIT:
+				# tuple(ndids, 1)
+				dimens.append((np.array(vals, dtype=np.uint32), 1))
+			else:
+				nids, vals = zip(*[v.split(':') for v in vals])
+				if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+					vals = [np.float32(1./np.uint16(v)) for v in vals]
 				else:
 					assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
-					nids, vals = zip(*[v.split(':') for v in vals])
-					dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
-			else:
-				pass
+				dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
+		else:
+			raise NotImplemented('Non CLUSTER conpression type parsing is not implemented yet')
+		irow += 1
+	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
 	# dok_matrix((), dtype=np.float32)
-	pass
 
 
 def main():
@@ -174,7 +172,7 @@ def main():
 	parser = ArgumentParser("scoring",
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
-	parser.add_argument("--emb", required=True, help='Embeddings file in the .mat or .nvc format')
+	parser.add_argument("--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("--network", required=True,
 						help='A .mat file containing the adjacency matrix and node labels of the input network.')
 	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
