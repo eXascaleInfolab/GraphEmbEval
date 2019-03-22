@@ -149,9 +149,9 @@ def loadNvc(nvcfile):
 					vals = vals[1].split()
 					if vals and vals[0].find(':') != -1:
 						# if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						# 	dimws = np.array([np.float32(1. / np.uint16(v[v.find(':') + 1:])) for v in vals], dtype = np.float32)
+						# 	dimws = np.array([np.float32(1. / np.uint16(v[v.find(':') + 1:])) for v in vals], dtype=np.float32)
 						# else:
-						dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
+						dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype=np.float32)
 				continue
 
 			# Construct the matrix
@@ -220,12 +220,13 @@ def loadNvc(nvcfile):
 			irow += 1
 
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
-	#print(nvec)
-	return nvec.tocsc()
+	#print('nvec:\n', nvec, '\ndimws:\n', dimws)
+	return nvec.tocsc(), dimws
 
 
 def main():
 	#loadNvc('test_cluster_compr.nvc')
+	#exit(0)
 	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
 
 	parser = ArgumentParser("scoring",
@@ -248,6 +249,7 @@ def main():
 	args = parser.parse_args()
 	# 0. Files
 	embeddings_file = args.emb
+	dimws = None  # Dimension weights (significance ratios)
 
 	# 1. Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
@@ -256,7 +258,7 @@ def main():
 		# Map nodes to their features
 		features_matrix = mat['embs']
 	elif args.emb.endswith('.nvc'):
-		features_matrix = loadNvc(args.emb)
+		features_matrix, dimws = loadNvc(args.emb)
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
 
