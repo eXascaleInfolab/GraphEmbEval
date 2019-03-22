@@ -16,7 +16,7 @@ from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
 from scipy.spatial.distance import squareform, pdist, cdist
-# from scipy.sparse import dok_matrix, coo_matrix
+from scipy.sparse import dok_matrix  #, coo_matrix
 from sklearn.metrics import f1_score
 from scipy.io import loadmat, savemat
 from sklearn.utils import shuffle as skshuffle
@@ -80,8 +80,6 @@ def loadNvc(nvcfile):
 	valfmt = VAL_UINT8  # Falue format
 	hdrvals = {'nodes:': None, 'dimensions:': None, 'value:': None, 'compression:': None, 'numbered:': None}
 	irow = 0  # Payload line (matrix row) index (of either dimensions or nodes)
-	dimens = []  # Dimensions array for the CLUSTER encoding
-	nodes = []  # Nodes array for the non CLUSTER encodings
 
 	for ln in nvcfile:
 		if not ln:
@@ -143,27 +141,71 @@ def loadNvc(nvcfile):
 					# else:
 					dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype = np.float32)
 			continue
+		# Construct the matrix
+		if not (ndsnum and dimnum):
+			raise ValueError('Invalid file header, the number of nodes ({}) and dimensions ({}) should be positive'.format(ndsnum, dimnum))
+		# TODO: Ensure that non-float format for bits does not affect the subsequent evaluations or use dtype=np.float32 for all value formats
+		nvec = dok_matrix((ndsnum, dimnum), dtype=np.float32 if valfmt != VAL_BIT else np.uint8)
 		# Parse the body
 		if numbered:
 			# Omit the cluster or node id prefix of each row
 			ln = ln.split('>', 1)[1]
+		vals = ln.split()
 		if compr == COMPR_CLUSTER:
-			vals = ln.split()
 			if valfmt == VAL_BIT:
-				# tuple(ndids, 1)
-				dimens.append((np.array(vals, dtype=np.uint32), 1))
+				for nd in vals:
+					nvec[np.uint32(nd), irow] = 1
 			else:
 				nids, vals = zip(*[v.split(':') for v in vals])
 				if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-					vals = [np.float32(1./np.uint16(v)) for v in vals]
+					vals = [np.float32(1. / np.uint16(v)) for v in vals]
 				else:
 					assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
-				dimens.append((np.array(nids, dtype=np.uint32), np.array(vals, dtype=np.float32)))
+				for i, nd in enumerate(nids):
+					nvec[np.uint32(nd), irow] = vals[i]
+		elif compr == COMPR_SPARSE:
+			if valfmt == VAL_BIT:
+				for dm in vals:
+					nvec[irow, np.uint32(dm)] = 1
+			else:
+				dms, vals = zip(*[v.split(':') for v in vals])
+				if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+					vals = [np.float32(1. / np.uint16(v)) for v in vals]
+				else:
+					assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
+				for i, dm in enumerate(dms):
+					nvec[irow, np.uint32(dm)] = vals[i]
+		elif compr == COMPR_RLE:
+			corr = 0  # RLE caused index correction
+			for j, v in enumerate(vals):
+				if v[0] != '0':
+					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+						nvec[irow, j + corr] = 1. / np.uint16(v)
+					else:
+						assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
+						nvec[irow, j + corr] = v
+				elif len(v) >= 2:
+					if v[1] != ':':
+						raise ValueError('Invalid RLE value (":" separator is expected): ' + v);
+					corr = np.uint16(v[2:]) + 1  # Length, the number of values to be inserted / skipped
+				else:
+					corr += 1
 		else:
-			raise NotImplemented('Non CLUSTER conpression type parsing is not implemented yet')
+			assert compr == COMPR_NONE, 'Unexpected compression format'
+			corr = 0  # 0 caused index correction
+			for j, v in enumerate(vals):
+				if v == '0':
+					corr += 1
+					continue
+				if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
+					nvec[irow, j + corr] = 1. / np.uint16(v)
+				else:
+					assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
+					nvec[irow, j + corr] = v
 		irow += 1
+
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
-	# dok_matrix((), dtype=np.float32)
+	return nvec.tocsc()
 
 
 def main():
