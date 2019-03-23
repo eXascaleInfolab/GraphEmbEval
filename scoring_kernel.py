@@ -56,14 +56,15 @@ class TopKRanker(OneVsRestClassifier):
 
 
 def loadNvc(nvcfile):
-	"""Load network embeddings from the specified file in the NVC format
+	"""Load network embeddings from the specified file in the NVC format v1.0.1
 
 	nvcfile: str  - file name
 
 	return
-		embeds: matrix  - embeddings matrix in the Compressed Sparse Column format
+		embeds: matrix  - embeddings matrix in the Dictionary Of Keys sparse matrix format
 		dimws: array  - dimensions weights or None
 	"""
+
 	hdr = False  # Whether the header is parsed
 	ftr = False # Whether the footer is parsed
 	ndsnum = 0  # The number of nodes
@@ -223,7 +224,8 @@ def loadNvc(nvcfile):
 
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
 	#print('nvec:\n', nvec, '\ndimws:\n', dimws)
-	return nvec.tocsc(), dimws
+	# Return node vecctors matrix in the Dictionary Of Keys based sparse format and dimension weights
+	return nvec, dimws  # nvec.tocsc() - Compressed Sparse Column format
 
 
 def main():
@@ -261,6 +263,7 @@ def main():
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
 		features_matrix, dimws = loadNvc(args.emb)
+		features_matrix = features_matrix.todense()
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
 
