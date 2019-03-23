@@ -84,6 +84,7 @@ def loadNvc(nvcfile):
 	hdrvals = {'nodes:': None, 'dimensions:': None, 'value:': None, 'compression:': None, 'numbered:': None}
 	irow = 0  # Payload line (matrix row) index (of either dimensions or nodes)
 	nvec = None  # Node vectors matrix
+	vqnorm = np.uint16(0xFF if valfmt == VAL_UINT8 else 0xFFFF)  # Normalization value for the vector quantification based compression
 
 	with open(nvcfile, 'r') as fnvc:
 		for ln in fnvc:
@@ -176,7 +177,8 @@ def loadNvc(nvcfile):
 				else:
 					nids, vals = zip(*[v.split(':') for v in vals])
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						vals = [np.float32(1. / np.uint16(v)) for v in vals]
+						# vals = [np.float32(1. / np.uint16(v)) for v in vals]
+						vals = [np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
 					else:
 						assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
 					for i, nd in enumerate(nids):
@@ -188,7 +190,8 @@ def loadNvc(nvcfile):
 				else:
 					dms, vals = zip(*[v.split(':') for v in vals])
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						vals = [np.float32(1. / np.uint16(v)) for v in vals]
+						# vals = [np.float32(1. / np.uint16(v)) for v in vals]
+						vals = [np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
 					else:
 						assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
 					for i, dm in enumerate(dms):
@@ -198,7 +201,8 @@ def loadNvc(nvcfile):
 				for j, v in enumerate(vals):
 					if v[0] != '0':
 						if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-							nvec[irow, j + corr] = 1. / np.uint16(v)
+							# nvec[irow, j + corr] = 1. / np.uint16(v)
+							nvec[irow, j + corr] = np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
 						else:
 							assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
 							nvec[irow, j + corr] = v
@@ -216,7 +220,8 @@ def loadNvc(nvcfile):
 						corr += 1
 						continue
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						nvec[irow, j + corr] = 1. / np.uint16(v)
+						# nvec[irow, j + corr] = 1. / np.uint16(v)
+						nvec[irow, j + corr] = np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
 					else:
 						assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
 						nvec[irow, j + corr] = v
@@ -229,8 +234,14 @@ def loadNvc(nvcfile):
 
 
 def main():
-	#loadNvc('test_cluster_compr.nvc')
-	#exit(0)
+	# features_matrix, dimws = loadNvc('test_cluster_compr.nvc')
+	# print('nvec:\n', features_matrix, '\ndimws:\n', dimws)
+	# if dimws is not None:
+	# 	print('Node vectors are corrected with the dimension weights')
+	# 	for (i, j), v in features_matrix.items():
+	# 		features_matrix[i, j] = v * dimws[j]
+	# print(features_matrix)
+	# exit(0)
 	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
 
 	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
