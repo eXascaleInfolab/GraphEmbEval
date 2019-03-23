@@ -250,6 +250,7 @@ def main():
 	parser.add_argument("--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (for .nvc format only)')
+	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
 	parser.add_argument("--network", required=True,
 						help='A .mat file containing the adjacency matrix and node labels of the input network.')
 	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -264,25 +265,37 @@ def main():
 						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in training_percents_dfl])))
 
 	args = parser.parse_args()
+	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
+	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	# 0. Files
 	embeddings_file = args.emb
 	dimws = None  # Dimension weights (significance ratios)
 
 	# 1. Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
+	dimweighted = False
 	if args.emb.lower().endswith('.mat'):
 		mat = loadmat(embeddings_file)
 		# Map nodes to their features
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
 		features_matrix, dimws = loadNvc(args.emb)
-		if args.weighted_dims and dimws is not None:
+		dimweighted = args.weighted_dims and dimws is not None
+		if dimweighted:
 			print('Node vectors are corrected with the dimension weights')
+			w0 = 1E-8  # Zero weight placeholder
 			for (i, j), v in features_matrix.items():
-				features_matrix[i, j] = v * dimws[j]
+				# Note: Weights cutting must be applied before the dimensions significance consideration
+				# w0 is used because 0 assignement does not work in the cycle affecting the dictionary size
+				features_matrix[i, j] = v * dimws[j] if not args.wdim_min or v >= args.wdim_min else w0
 		features_matrix = features_matrix.todense()
+		np.where(features_matrix > w0, features_matrix, 0)
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
+
+	# Cut weights lower wdim_min if required
+	if args.wdim_min and not dimweighted:
+		np.where(features_matrix >= args.wdim_min, features_matrix, 0)
 
 	# 2. Load labels
 	mat = loadmat(args.network)  # Compressed Sparse Column format
@@ -314,7 +327,7 @@ def main():
 	#     for shuf in shuffles:
 	for ii, train_percent in enumerate(training_percents):
 		for jj, shuf in enumerate(shuffles):
-			print([ii,jj])
+			print([ii, jj])
 			X, y = shuf
 
 			training_size = int(train_percent * X.shape[0])
@@ -341,9 +354,9 @@ def main():
 				y_test[i].append(j)
 
 			# Classification strategy and similarity matrices
-			clf = TopKRanker(SVC(kernel="precomputed",cache_size=4096,probability=True),1)  # TopKRanker(LogisticRegression())
-			gram = squareform( 1 - pdist(X_train, 'cosine'));  # jaccard, hamming; wjaccard
-			gram_test = 1 - cdist(X_test, X_train, 'cosine');
+			clf = TopKRanker(SVC(kernel="precomputed", cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
+			gram = squareform( 1 - pdist(X_train, args.metric));  # cosine, jaccard, hamming
+			gram_test = 1 - cdist(X_test, X_train, args.metric);
 
 			clf.fit(gram, y_train_)
 
@@ -381,7 +394,7 @@ def main():
 	#   print ('Average score:', dict(avg_score))
 	#   print ('-------------------')
 
-	savemat(args.outputfile,mdict={'res':res})
+	savemat(args.outputfile, mdict={'res': res})
 
 
 if __name__ == "__main__":
