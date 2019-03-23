@@ -233,10 +233,12 @@ def main():
 	#exit(0)
 	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
 
-	parser = ArgumentParser("scoring",
+	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
 	parser.add_argument("--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
+	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
+						help='Apply dimension weights if specified (for .nvc format only)')
 	parser.add_argument("--network", required=True,
 						help='A .mat file containing the adjacency matrix and node labels of the input network.')
 	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -263,6 +265,10 @@ def main():
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
 		features_matrix, dimws = loadNvc(args.emb)
+		if args.weighted_dims and dimws is not None:
+			print('Node vectors are corrected with the dimension weights')
+			for (i, j), v in features_matrix.items():
+				features_matrix[i, j] = v * dimws[j]
 		features_matrix = features_matrix.todense()
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
