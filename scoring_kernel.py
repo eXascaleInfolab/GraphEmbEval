@@ -360,9 +360,11 @@ def main():
 
 			for kk,average in enumerate(averages):
 				res[jj,ii,kk] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
-	res_ave = np.mean(res,0);
-	print("micro, macro")
+	res_ave = np.mean(res, 0)
+	print("F1 [micro macro]:")
 	print(res_ave)
+	if len(res) >= 2:
+		print("Average:", np.mean(res_ave, 0))
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
