@@ -348,106 +348,110 @@ def main():
 		training_percents = training_percents_dfl
 
 	averages = ["micro", "macro"]
-	res = np.zeros([args.num_shuffles, len(training_percents), len(averages)])
+	res = np.full([args.num_shuffles, len(training_percents), len(averages)], np.nan, dtype=np.float32)
 	# for train_percent in training_percents:
 	#     for shuf in shuffles:
 	Xdis = None
 	Xdis_train = None
-	for ii, train_percent in enumerate(training_percents):
-		for jj, shuf in enumerate(shuffles):
-			print([ii, jj])
-			if dis_features_matrix is not None:
-				X, Xdis, y = shuf
-				#assert len(X) == len(Xdis), 'Feature matrix partitions validation failed'
-			else:
-				X, y = shuf
-
-			training_size = int(train_percent * X.shape[0])
-
-			X_train = X[:training_size, :]
-			if dis_features_matrix is not None:
-				Xdis_train = Xdis[:training_size, :]
-			y_train_ = y[:training_size]
-
-			y_train = [[] for x in range(y_train_.shape[0])]
-
-
-			cy =  y_train_.tocoo()
-			for i, j in zip(cy.row, cy.col):
-				y_train[i].append(j)
-
-			assert sum(len(l) for l in y_train) == y_train_.nnz
-
-			X_test = X[training_size:, :]
-			if dis_features_matrix is not None:
-				Xdis_test = Xdis[training_size:, :]
-			y_test_ = y[training_size:]
-
-			y_test = [[] for _ in range(y_test_.shape[0])]
-
-			cy = y_test_.tocoo()
-			for i, j in zip(cy.row, cy.col):
-				y_test[i].append(j)
-
-			# find out how many labels should be predicted
-			top_k_list = [len(l) for l in y_test]
-
-			# Classification strategy and similarity matrices
-			# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
-			clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'), 1)  # TopKRanker(LogisticRegression())
-			if args.kernel == "precomputed":
-				# Note: metric here is distance metric = 1 - sim_metric
-				metric = args.metric
-				if metric == "jaccard":
-					metric = lambda u, v: np.float32(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
-				if dis_features_matrix is None:
-					# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
-					gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
-					gram_test = np.float32(1) - cdist(X_test, X_train, metric);
+	try:
+		for ii, train_percent in enumerate(training_percents):
+			for jj, shuf in enumerate(shuffles):
+				print([ii, jj])
+				if dis_features_matrix is not None:
+					X, Xdis, y = shuf
+					#assert len(X) == len(Xdis), 'Feature matrix partitions validation failed'
 				else:
-					def dis_metric(u, v):
-						"""Jaccard-like dissimilarity distance metric"""
-						return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+					X, y = shuf
 
-					if metric == "cosine":
-						metric = cosine
-					sims = np.zeros(training_size * (training_size - 1) // 2, dtype=np.float32)
-					icur = 0
-					for i in range(training_size - 1):
-						for j in range(i + 1, training_size):
-							sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
-							# sims[icur] = 1 - metric(X_train[i], X_train[j]) - (1 - metric(Xdis_train[i], Xdis_train[j]))
-							#sims_test[icur] = 1 - metric(X_test[i], X_test[j]) - (1 - metric(Xdis_test[i], Xdis_test[j]))
-							icur += 1
-					gram = squareform(sims)
-					# gram_test = 1 - cdist(X_test, X_train, metric);
-					#gram_test = squareform(sims_test)
-					gram_test = np.zeros((len(X_test), training_size), dtype=np.float32)
-					for i in range(len(X_test)):
-						for j in range(training_size):
-							gram_test[i, j] = 1 - metric(X_test[i], X_train[j]) - (1 - metric(Xdis_test[i], Xdis_train[j]))
-				clf.fit(gram, y_train_)
-				preds = clf.predict(gram_test, top_k_list)
-			elif args.kernel == "rbf":
-				clf.fit(X_train, y_train_)
-				preds = clf.predict(X_test, top_k_list)
-			else:
-				raise ValueError('Unexpected kernel: ' + args.kernel)
+				training_size = int(train_percent * X.shape[0])
 
-			# results = {}
-			#
-			# for average in averages:
-			#     results[average] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
-			#
-			#  all_results[train_percent].append(res)
+				X_train = X[:training_size, :]
+				if dis_features_matrix is not None:
+					Xdis_train = Xdis[:training_size, :]
+				y_train_ = y[:training_size]
 
-			for kk,average in enumerate(averages):
-				res[jj,ii,kk] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
-	res_ave = np.mean(res, 0)
-	print("F1 [micro macro]:")
-	print(res_ave)
-	if len(res) >= 2:
-		print("Average:", np.mean(res_ave, 0))
+				y_train = [[] for x in range(y_train_.shape[0])]
+
+
+				cy =  y_train_.tocoo()
+				for i, j in zip(cy.row, cy.col):
+					y_train[i].append(j)
+
+				assert sum(len(l) for l in y_train) == y_train_.nnz
+
+				X_test = X[training_size:, :]
+				if dis_features_matrix is not None:
+					Xdis_test = Xdis[training_size:, :]
+				y_test_ = y[training_size:]
+
+				y_test = [[] for _ in range(y_test_.shape[0])]
+
+				cy = y_test_.tocoo()
+				for i, j in zip(cy.row, cy.col):
+					y_test[i].append(j)
+
+				# find out how many labels should be predicted
+				top_k_list = [len(l) for l in y_test]
+
+				# Classification strategy and similarity matrices
+				# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
+				clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'), 1)  # TopKRanker(LogisticRegression())
+				if args.kernel == "precomputed":
+					# Note: metric here is distance metric = 1 - sim_metric
+					metric = args.metric
+					if metric == "jaccard":
+						metric = lambda u, v: np.float32(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+					if dis_features_matrix is None:
+						# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
+						gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+						gram_test = np.float32(1) - cdist(X_test, X_train, metric);
+					else:
+						def dis_metric(u, v):
+							"""Jaccard-like dissimilarity distance metric"""
+							return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+
+						if metric == "cosine":
+							metric = cosine
+						sims = np.empty(training_size * (training_size - 1) // 2, dtype=np.float32)
+						icur = 0
+						for i in range(training_size - 1):
+							for j in range(i + 1, training_size):
+								# sims[icur] = 1 - metric(X_train[i], X_train[j]) - (1 - metric(Xdis_train[i], Xdis_train[j]))
+								sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+								##sims_test[icur] = 1 - metric(X_test[i], X_test[j]) - (1 - metric(Xdis_test[i], Xdis_test[j]))
+								icur += 1
+						assert icur == len(sims), 'sims size validation failed'
+						gram = squareform(sims)
+						# gram_test = 1 - cdist(X_test, X_train, metric);
+						#gram_test = squareform(sims_test)
+						gram_test = np.empty((len(X_test), training_size), dtype=np.float32)
+						for i in range(len(X_test)):
+							for j in range(training_size):
+								# gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - (np.float32(1) - metric(Xdis_test[i], Xdis_train[j]))
+								gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+					clf.fit(gram, y_train_)
+					preds = clf.predict(gram_test, top_k_list)
+				elif args.kernel == "rbf":
+					clf.fit(X_train, y_train_)
+					preds = clf.predict(X_test, top_k_list)
+				else:
+					raise ValueError('Unexpected kernel: ' + args.kernel)
+
+				# results = {}
+				#
+				# for average in averages:
+				#     results[average] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
+				#
+				#  all_results[train_percent].append(res)
+
+				for kk,average in enumerate(averages):
+					res[jj,ii,kk] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
+	finally:
+		res_ave = np.nanmean(res, 0)
+		print("F1 [micro macro]:")
+		print(res_ave)
+		if len(res) >= 2:
+			print("Average:", np.nanmean(res_ave, 0))
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
