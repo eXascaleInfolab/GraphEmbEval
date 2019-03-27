@@ -30,6 +30,24 @@ except ImportError:
 
 import numpy as np
 # import sys
+import os
+
+
+PROFILE = True
+if PROFILE:
+	try:
+		import cProfile as prof
+	except ImportError:
+		import profile as prof
+	# import io
+	try:
+		from pstats import SortKey
+		sk_time = SortKey.TIME
+		sk_cumulative = SortKey.CUMULATIVE
+	except ImportError:
+		sk_time = 'time'  # 1  # 'time'
+		sk_cumulative = 'cumulative'  # 2, 'cumulative'
+	import pstats
 
 
 class TopKRanker(OneVsRestClassifier):
@@ -55,7 +73,55 @@ class TopKRanker(OneVsRestClassifier):
 #	return np.count_nonzero(a==b)/len(X)
 
 
-def main():
+_trainperc_dfl = [0.9]  # [0.1, 0.5, 0.9]
+
+
+def parseArgs(opts=None):
+	"""Arguments parser
+
+	opts: str  - command line arguments
+
+	return args  - parsed arguments
+	"""
+	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
+							formatter_class=ArgumentDefaultsHelpFormatter,
+							conflict_handler='resolve')
+	parser.add_argument("-g", "--network", required=True,
+						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
+	parser.add_argument("--adj-matrix-name", default='network',
+						help='Variable name of the adjacency matrix inside the network .mat file.')
+	parser.add_argument("--label-matrix-name", default='group',
+						help='Variable name of the labels matrix inside the network .mat file.')
+	parser.add_argument("-e", "--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
+	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
+						help='Apply dimension weights if specified (applicable for the NVC format only)')
+	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
+	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed, rbf, linear')
+	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
+	parser.add_argument("--all", default=False, action='store_true',
+						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
+						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
+	parser.add_argument("-o", "--output", default='res.mat', help='Output file name for the resulting classifier.')
+	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles of the embedding matrix.')
+	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
+
+	args = parser.parse_args(opts)
+	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
+	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
+	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
+	if args.kernel != "precomputed":
+		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
+		args.weighted_dims = False
+	return args
+
+
+def evalEmbCls(args):
+	"""Evaluate graph/network embedding via the multi-lable classification
+
+	args  - parsed arguments
+	"""
+	assert args, 'Valid args are expected'
+
 	# features_matrix, dimwsim = loadNvc('test_cluster_compr.nvc')
 	# print('nvec:\n', features_matrix, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
 	# if dimwsim is not None:
@@ -64,36 +130,7 @@ def main():
 	# 		features_matrix[i, j] = v * dimwsim[j]
 	# print(features_matrix)
 	# exit(0)
-	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
 
-	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
-							formatter_class=ArgumentDefaultsHelpFormatter,
-							conflict_handler='resolve')
-	parser.add_argument("--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
-	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
-						help='Apply dimension weights if specified (for .nvc format only)')
-	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("--kernel", default='precomputed', help='SVM kernel: precomputed, rbf')
-	parser.add_argument("--network", required=True,
-						help='A .mat file containing the adjacency matrix and node labels of the input network.')
-	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
-	parser.add_argument("--adj-matrix-name", default='network',
-						help='Variable name of the adjacency matrix inside the .mat file.')
-	parser.add_argument("--label-matrix-name", default='group',
-						help='Variable name of the labels matrix inside the .mat file.')
-	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles.')
-	parser.add_argument("--outputfile", default='res.mat', help='Number of shuffles.')
-	parser.add_argument("--all", default=False, action='store_true',
-						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
-						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in training_percents_dfl])))
-
-	args = parser.parse_args()
-	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
-	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
-	assert args.kernel in ('precomputed', 'rbf'), 'Unexpexted kernel'
-	if args.kernel != "precomputed":
-		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
-		args.weighted_dims = False
 	# 0. Files
 	embeddings_file = args.emb
 	dimwsim = None  # Dimension weights (significance ratios)
@@ -159,7 +196,7 @@ def main():
 	if args.all:
 		training_percents = np.asarray(range(1, 10)) * .1
 	else:
-		training_percents = training_percents_dfl
+		training_percents = _trainperc_dfl
 
 	averages = ["micro", "macro"]
 	res = np.full([args.num_shuffles, len(training_percents), len(averages)], np.nan, dtype=np.float32)
@@ -220,12 +257,14 @@ def main():
 						gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
 						gram_test = np.float32(1) - cdist(X_test, X_train, metric);
 					else:
-						def dis_metric(u, v):
-							"""Jaccard-like dissimilarity distance metric"""
-							return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+						# def dis_metric(u, v):
+						# 	"""Jaccard-like dissimilarity distance metric"""
+						# 	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
 
 						if metric == "cosine":
 							metric = cosine
+						dis_metric = metric
+
 						sims = np.empty(training_size * (training_size - 1) // 2, dtype=np.float32)
 						icur = 0
 						for i in range(training_size - 1):
@@ -245,7 +284,7 @@ def main():
 								gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
-				elif args.kernel == "rbf":
+				elif args.kernel in ('rbf', 'linear'):
 					clf.fit(X_train, y_train_)
 					preds = clf.predict(X_test, top_k_list)
 				else:
@@ -282,8 +321,27 @@ def main():
 	#   print ('Average score:', dict(avg_score))
 	#   print ('-------------------')
 
-	savemat(args.outputfile, mdict={'res': res})
+	savemat(args.output, mdict={'res': res})
 
 
 if __name__ == "__main__":
-	main()
+	args = None
+	pr = None
+	try:
+		args = parseArgs()
+		PROFILE = PROFILE and (not args or args.profile)
+		if PROFILE:
+			pr = prof.Profile()
+			pr.enable()
+		evalEmbCls(args)
+	finally:
+		if pr:
+			pr.disable()
+			# sio = io.StringIO()
+			# ps = pstats.Stats(pr, stream=sio).sort_stats(SortKey.TIME, SortKey.CUMULATIVE)
+			ps = pstats.Stats(pr).sort_stats(sk_time, sk_cumulative)
+			ps.print_stats(30)
+			if args and args.output:
+				profname = os.path.splitext(args.output)[0] + '.prof'
+				ps.dump_stats(profname)
+				# print(sio.getvalue())
