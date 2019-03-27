@@ -393,15 +393,17 @@ def main():
 			top_k_list = [len(l) for l in y_test]
 
 			# Classification strategy and similarity matrices
+			# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
 			clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'), 1)  # TopKRanker(LogisticRegression())
 			if args.kernel == "precomputed":
 				# Note: metric here is distance metric = 1 - sim_metric
 				metric = args.metric
 				if metric == "jaccard":
-					metric = lambda u, v: 1 - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+					metric = lambda u, v: np.float32(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
 				if dis_features_matrix is None:
-					gram = squareform(1 - pdist(X_train, metric))  # cosine, jaccard, hamming
-					gram_test = 1 - cdist(X_test, X_train, metric);
+					# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
+					gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+					gram_test = np.float32(1) - cdist(X_test, X_train, metric);
 				else:
 					def dis_metric(u, v):
 						"""Jaccard-like dissimilarity distance metric"""
@@ -413,7 +415,7 @@ def main():
 					icur = 0
 					for i in range(training_size - 1):
 						for j in range(i + 1, training_size):
-							sims[icur] = 1 - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+							sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
 							# sims[icur] = 1 - metric(X_train[i], X_train[j]) - (1 - metric(Xdis_train[i], Xdis_train[j]))
 							#sims_test[icur] = 1 - metric(X_test[i], X_test[j]) - (1 - metric(Xdis_test[i], Xdis_test[j]))
 							icur += 1
