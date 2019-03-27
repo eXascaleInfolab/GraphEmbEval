@@ -15,7 +15,7 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
-from scipy.spatial.distance import squareform, pdist, cdist
+from scipy.spatial.distance import squareform, pdist, cdist, cosine
 from scipy.sparse import dok_matrix  #, coo_matrix
 from sklearn.metrics import f1_score
 from scipy.io import loadmat, savemat
@@ -56,13 +56,14 @@ class TopKRanker(OneVsRestClassifier):
 
 
 def loadNvc(nvcfile):
-	"""Load network embeddings from the specified file in the NVC format v1.0.1
+	"""Load network embeddings from the specified file in the NVC format v1.1
 
 	nvcfile: str  - file name
 
 	return
 		embeds: matrix  - embeddings matrix in the Dictionary Of Keys sparse matrix format
-		dimws: array  - dimensions weights or None
+		dimwsim: array  - dimensions weights for the similarity or None
+		dimwdis: array  - dimensions weights for the dissimilarity or None
 	"""
 
 	hdr = False  # Whether the header is parsed
@@ -70,7 +71,8 @@ def loadNvc(nvcfile):
 	ndsnum = 0  # The number of nodes
 	dimnum = 0  # The number of dimensions (reprsentative clusters)
 	numbered = False
-	dimws = None  # Dimension weights
+	dimwsim = None  # Dimension weights for the similarity
+	dimwdis = None  # Dimension weights for the dissimilarity
 	COMPR_NONE = 0
 	COMPR_RLE = 1
 	COMPR_SPARSE = 2
@@ -151,11 +153,16 @@ def loadNvc(nvcfile):
 					if len(vals) <= 1:
 						continue
 					vals = vals[1].split()
-					if vals and vals[0].find(':') != -1:
+					idimw = vals[0].find(':') + 1
+					if vals and idimw:
 						# if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
-						# 	dimws = np.array([np.float32(1. / np.uint16(v[v.find(':') + 1:])) for v in vals], dtype=np.float32)
+						# 	dimwsim = np.array([np.float32(1. / np.uint16(v[v.find(':') + 1:])) for v in vals], dtype=np.float32)
 						# else:
-						dimws = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype=np.float32)
+						if vals[0].find('/', idimw) == -1:
+							dimwsim = np.array([np.float32(v[v.find(':') + 1:]) for v in vals], dtype=np.float32)
+						else:
+							dimwsim = np.array([np.float32(v[v.find(':') + 1:v.rfind('/')]) for v in vals], dtype=np.float32)
+							dimwdis = np.array([np.float32(v[v.rfind('/')+1:]) for v in vals], dtype=np.float32)
 				continue
 
 			# Construct the matrix
@@ -228,18 +235,19 @@ def loadNvc(nvcfile):
 			irow += 1
 
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
-	#print('nvec:\n', nvec, '\ndimws:\n', dimws)
+	assert len(dimwsim) == len(dimwdis), 'Parsed dimension weights are not synchronized'
+	#print('nvec:\n', nvec, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
 	# Return node vecctors matrix in the Dictionary Of Keys based sparse format and dimension weights
-	return nvec, dimws  # nvec.tocsc() - Compressed Sparse Column format
+	return nvec, dimwsim, dimwdis  # nvec.tocsc() - Compressed Sparse Column format
 
 
 def main():
-	# features_matrix, dimws = loadNvc('test_cluster_compr.nvc')
-	# print('nvec:\n', features_matrix, '\ndimws:\n', dimws)
-	# if dimws is not None:
+	# features_matrix, dimwsim = loadNvc('test_cluster_compr.nvc')
+	# print('nvec:\n', features_matrix, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
+	# if dimwsim is not None:
 	# 	print('Node vectors are corrected with the dimension weights')
 	# 	for (i, j), v in features_matrix.items():
-	# 		features_matrix[i, j] = v * dimws[j]
+	# 		features_matrix[i, j] = v * dimwsim[j]
 	# print(features_matrix)
 	# exit(0)
 	training_percents_dfl = [0.9]  # [0.1, 0.5, 0.9]
@@ -251,6 +259,7 @@ def main():
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (for .nvc format only)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
+	parser.add_argument("--kernel", default='precomputed', help='SVM kernel: precomputed, rbf')
 	parser.add_argument("--network", required=True,
 						help='A .mat file containing the adjacency matrix and node labels of the input network.')
 	parser.add_argument("--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -267,29 +276,43 @@ def main():
 	args = parser.parse_args()
 	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
+	assert args.kernel in ('precomputed', 'rbf'), 'Unexpexted kernel'
+	if args.kernel != "precomputed":
+		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
+		args.weighted_dims = False
 	# 0. Files
 	embeddings_file = args.emb
-	dimws = None  # Dimension weights (significance ratios)
+	dimwsim = None  # Dimension weights (significance ratios)
+	dimwdis = None  # Dimension weights for the dissimilarity
 
 	# 1. Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
 	dimweighted = False
+	dis_features_matrix = None  # Dissimilarity features matrix
 	if args.emb.lower().endswith('.mat'):
 		mat = loadmat(embeddings_file)
 		# Map nodes to their features
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
-		features_matrix, dimws = loadNvc(args.emb)
-		dimweighted = args.weighted_dims and dimws is not None
+		features_matrix, dimwsim, dimwdis = loadNvc(args.emb)
+		dimweighted = args.weighted_dims and dimwsim is not None
 		if dimweighted:
 			print('Node vectors are corrected with the dimension weights')
+			if dimwdis is not None:
+				dis_features_matrix = features_matrix.copy()
 			w0 = 1E-8  # Zero weight placeholder
 			for (i, j), v in features_matrix.items():
 				# Note: Weights cutting must be applied before the dimensions significance consideration
 				# w0 is used because 0 assignement does not work in the cycle affecting the dictionary size
-				features_matrix[i, j] = v * dimws[j] if not args.wdim_min or v >= args.wdim_min else w0
+				features_matrix[i, j] = v * dimwsim[j] if not args.wdim_min or v >= args.wdim_min else w0
+			if dis_features_matrix is not None:
+				for (i, j), v in dis_features_matrix.items():
+					dis_features_matrix[i, j] = v * dimwdis[j] if not args.wdim_min or v >= args.wdim_min else w0
+				dis_features_matrix = dis_features_matrix.todense()
+				np.where(dis_features_matrix > w0, dis_features_matrix, 0)
 		features_matrix = features_matrix.todense()
-		np.where(features_matrix > w0, features_matrix, 0)
+		if dimweighted:
+			np.where(features_matrix > w0, features_matrix, 0)
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
 
@@ -311,7 +334,10 @@ def main():
 	# 2. Shuffle, to create train/test groups
 	shuffles = []
 	for x in range(args.num_shuffles):
-		shuffles.append(skshuffle(features_matrix, labels_matrix))
+		if dis_features_matrix is not None:
+			shuffles.append(skshuffle(features_matrix, dis_features_matrix, labels_matrix))
+		else:
+			shuffles.append(skshuffle(features_matrix, labels_matrix))
 
 	# 3. to score each train/test group
 	# all_results = defaultdict(list)
@@ -325,14 +351,22 @@ def main():
 	res = np.zeros([args.num_shuffles, len(training_percents), len(averages)])
 	# for train_percent in training_percents:
 	#     for shuf in shuffles:
+	Xdis = None
+	Xdis_train = None
 	for ii, train_percent in enumerate(training_percents):
 		for jj, shuf in enumerate(shuffles):
 			print([ii, jj])
-			X, y = shuf
+			if dis_features_matrix is not None:
+				X, Xdis, y = shuf
+				#assert len(X) == len(Xdis), 'Feature matrix partitions validation failed'
+			else:
+				X, y = shuf
 
 			training_size = int(train_percent * X.shape[0])
 
 			X_train = X[:training_size, :]
+			if dis_features_matrix is not None:
+				Xdis_train = Xdis[:training_size, :]
 			y_train_ = y[:training_size]
 
 			y_train = [[] for x in range(y_train_.shape[0])]
@@ -345,24 +379,52 @@ def main():
 			assert sum(len(l) for l in y_train) == y_train_.nnz
 
 			X_test = X[training_size:, :]
+			if dis_features_matrix is not None:
+				Xdis_test = Xdis[training_size:, :]
 			y_test_ = y[training_size:]
 
 			y_test = [[] for _ in range(y_test_.shape[0])]
 
-			cy =  y_test_.tocoo()
+			cy = y_test_.tocoo()
 			for i, j in zip(cy.row, cy.col):
 				y_test[i].append(j)
 
-			# Classification strategy and similarity matrices
-			clf = TopKRanker(SVC(kernel="precomputed", cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
-			gram = squareform( 1 - pdist(X_train, args.metric));  # cosine, jaccard, hamming
-			gram_test = 1 - cdist(X_test, X_train, args.metric);
-
-			clf.fit(gram, y_train_)
-
 			# find out how many labels should be predicted
 			top_k_list = [len(l) for l in y_test]
-			preds = clf.predict(gram_test, top_k_list)
+
+			# Classification strategy and similarity matrices
+			clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'), 1)  # TopKRanker(LogisticRegression())
+			if args.kernel == "precomputed":
+				metric = args.metric
+				if metric == "jaccard":
+					metric = lambda u, v: 1 - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+				if dis_features_matrix is None:
+					gram = squareform(1 - pdist(X_train, metric))  # cosine, jaccard, hamming
+					gram_test = 1 - cdist(X_test, X_train, metric);
+				else:
+					if metric == "cosine":
+						metric = cosine
+					dists = np.zeros(training_size * (training_size - 1) // 2, dtype=np.float32)
+					icur = 0
+					for i in range(training_size - 1):
+						for j in range(i + 1, training_size):
+							dists[icur] = 1 - metric(X_train[i], X_train[j]) - (1 - metric(Xdis_train[i], Xdis_train[j]))
+							#dists_test[icur] = 1 - metric(X_test[i], X_test[j]) - (1 - metric(Xdis_test[i], Xdis_test[j]))
+							icur += 1
+					gram = squareform(dists)
+					# gram_test = 1 - cdist(X_test, X_train, metric);
+					#gram_test = squareform(dists_test)
+					gram_test = np.zeros((len(X_test), training_size), dtype=np.float32)
+					for i in range(len(X_test)):
+						for j in range(training_size):
+							gram_test[i, j] = 1 - metric(X_test[i], X_train[j]) - (1 - metric(Xdis_test[i], Xdis_train[j]))
+				clf.fit(gram, y_train_)
+				preds = clf.predict(gram_test, top_k_list)
+			elif args.kernel == "rbf":
+				clf.fit(X_train, y_train_)
+				preds = clf.predict(X_test, top_k_list)
+			else:
+				raise ValueError('Unexpected kernel: ' + args.kernel)
 
 			# results = {}
 			#
