@@ -98,7 +98,7 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='linear solver: liblinear (fast), saga (fastest), lbfgs (slowest, multicore). ATTENTION: has priority over the SVM kernel')
+	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fast), saga (slowest), lbfgs (fastest, parallel, inaccurate). ATTENTION: has priority over the SVM kernel')
 	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix), rbf (accurate but slow), linear')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("--all", default=False, action='store_true',
