@@ -12,7 +12,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 # from collections import defaultdict
 # from gensim.models import Word2Vec, KeyedVectors
 from sklearn.multiclass import OneVsRestClassifier
-# from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
@@ -29,8 +29,8 @@ except ImportError:
 	viewitems = lambda dct: viewMethod(dct, 'items')()  #pylint: disable=W0611
 
 import numpy as np
-# import sys
 import os
+import sys
 
 
 PROFILE = True
@@ -39,7 +39,7 @@ if PROFILE:
 		import cProfile as prof
 	except ImportError:
 		import profile as prof
-	# import io
+	import io
 	try:
 		from pstats import SortKey
 		sk_time = SortKey.TIME
@@ -79,7 +79,7 @@ _trainperc_dfl = [0.9]  # [0.1, 0.5, 0.9]
 def parseArgs(opts=None):
 	"""Arguments parser
 
-	opts: str  - command line arguments
+	opts: list(str)  - command line arguments
 
 	return args  - parsed arguments
 	"""
@@ -95,8 +95,11 @@ def parseArgs(opts=None):
 	parser.add_argument("-e", "--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
+	parser.add_argument("--no-dissim", default=False, action='store_true',
+						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed, rbf, linear')
+	parser.add_argument("-s", "--solver", default=None, help='linear solver: liblinear (fast), saga (fastest), lbfgs (slowest, multicore). ATTENTION: has priority over the SVM kernel')
+	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix), rbf (accurate but slow), linear')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
@@ -108,6 +111,7 @@ def parseArgs(opts=None):
 	args = parser.parse_args(opts)
 	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
+	assert args.solver is None or args.solver in ('liblinear', 'saga', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
 	if args.kernel != "precomputed":
 		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
@@ -146,6 +150,9 @@ def evalEmbCls(args):
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
 		features_matrix, dimwsim, dimwdis = loadNvc(args.emb)
+		# Omit dissimilarity weighting if required
+		if args.no_dissim:
+			dimwdis = None
 		dimweighted = args.weighted_dims and dimwsim is not None
 		if dimweighted:
 			print('Node vectors are corrected with the dimension weights')
@@ -246,7 +253,8 @@ def evalEmbCls(args):
 
 				# Classification strategy and similarity matrices
 				# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
-				clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'), 1)  # TopKRanker(LogisticRegression())
+				clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced') if args.solver is not None
+					else SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
 				if args.kernel == "precomputed":
 					# Note: metric here is distance metric = 1 - sim_metric
 					metric = args.metric
@@ -257,21 +265,21 @@ def evalEmbCls(args):
 						gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
 						gram_test = np.float32(1) - cdist(X_test, X_train, metric);
 					else:
-						# def dis_metric(u, v):
-						# 	"""Jaccard-like dissimilarity distance metric"""
-						# 	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+						def dis_metric(u, v):
+						 	"""Jaccard-like dissimilarity distance metric"""
+						 	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
 
 						if metric == "cosine":
 							metric = cosine
-						dis_metric = metric
+						#dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
 
 						sims = np.empty(training_size * (training_size - 1) // 2, dtype=np.float32)
 						icur = 0
 						for i in range(training_size - 1):
 							for j in range(i + 1, training_size):
-								# sims[icur] = 1 - metric(X_train[i], X_train[j]) - (1 - metric(Xdis_train[i], Xdis_train[j]))
-								sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
-								##sims_test[icur] = 1 - metric(X_test[i], X_test[j]) - (1 - metric(Xdis_test[i], Xdis_test[j]))
+								#sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+								# Note: positive gram matrix yields abit more accurate resutls
+								sims[icur] = np.float32(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / np.float32(2)
 								icur += 1
 						assert icur == len(sims), 'sims size validation failed'
 						gram = squareform(sims)
@@ -280,15 +288,16 @@ def evalEmbCls(args):
 						gram_test = np.empty((len(X_test), training_size), dtype=np.float32)
 						for i in range(len(X_test)):
 							for j in range(training_size):
-								# gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - (np.float32(1) - metric(Xdis_test[i], Xdis_train[j]))
-								gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+								# gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+								# Note: positive gram matrix yields abit more accurate resutls
+								gram_test[i, j] = np.float32(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / np.float32(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
-				elif args.kernel in ('rbf', 'linear'):
+				else: #if args.solver in ('liblinear', 'saga', 'lbfgs') or args.kernel in ('rbf', 'linear'):
 					clf.fit(X_train, y_train_)
 					preds = clf.predict(X_test, top_k_list)
-				else:
-					raise ValueError('Unexpected kernel: ' + args.kernel)
+				# else:
+				# 	raise ValueError('Unexpected kernel: ' + args.kernel)
 
 				# results = {}
 				#
@@ -337,11 +346,17 @@ if __name__ == "__main__":
 	finally:
 		if pr:
 			pr.disable()
-			# sio = io.StringIO()
-			# ps = pstats.Stats(pr, stream=sio).sort_stats(SortKey.TIME, SortKey.CUMULATIVE)
-			ps = pstats.Stats(pr).sort_stats(sk_time, sk_cumulative)
+			sio = io.StringIO()
+			ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
 			ps.print_stats(30)
 			if args and args.output:
+				print(sio.getvalue())
 				profname = os.path.splitext(args.output)[0] + '.prof'
-				ps.dump_stats(profname)
-				# print(sio.getvalue())
+				with open(profname, 'a') as fout:
+					fout.write('$ ')
+					fout.write(' '.join(sys.argv))
+					fout.write('\n')
+					fout.write(sio.getvalue())
+					#fout.write('\n')
+					fout.write('-'*80)
+					fout.write('\n')
