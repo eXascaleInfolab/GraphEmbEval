@@ -98,8 +98,7 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fast), saga (slowest, slower than SVM rbf)'
-						', lbfgs (fastest, parallel, inaccurate). ATTENTION: has priority over the SVM kernel')
+	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear, lbfgs (parallel, less accurate). ATTENTION: has priority over the SVM kernel')
 	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
 						', rbf (accurate but slower), linear')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -113,7 +112,7 @@ def parseArgs(opts=None):
 	args = parser.parse_args(opts)
 	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
-	assert args.solver is None or args.solver in ('liblinear', 'saga', 'lbfgs'), 'Unexpexted solver'
+	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
 	if args.weighted_dims and args.solver is None and args.kernel != "precomputed":
 		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
@@ -298,7 +297,7 @@ def evalEmbCls(args):
 								gram_test[i, j] = np.float32(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / np.float32(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
-				else: #if args.solver in ('liblinear', 'saga', 'lbfgs') or args.kernel in ('rbf', 'linear'):
+				else: #if args.solver in ('liblinear', 'lbfgs') or args.kernel in ('rbf', 'linear'):
 					clf.fit(X_train, y_train_)
 					preds = clf.predict(X_test, top_k_list)
 				# else:
