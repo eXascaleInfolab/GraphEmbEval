@@ -98,8 +98,10 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fast), saga (slowest), lbfgs (fastest, parallel, inaccurate). ATTENTION: has priority over the SVM kernel')
-	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix), rbf (accurate but slow), linear')
+	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fast), saga (slowest, slower than SVM rbf)'
+						', lbfgs (fastest, parallel, inaccurate). ATTENTION: has priority over the SVM kernel')
+	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
+						', rbf (accurate but slower), linear')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
@@ -113,7 +115,7 @@ def parseArgs(opts=None):
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	assert args.solver is None or args.solver in ('liblinear', 'saga', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
-	if args.kernel != "precomputed":
+	if args.weighted_dims and args.solver is None and args.kernel != "precomputed":
 		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
 		args.weighted_dims = False
 	return args
@@ -253,8 +255,11 @@ def evalEmbCls(args):
 
 				# Classification strategy and similarity matrices
 				# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
-				clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced') if args.solver is not None
-					else SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
+				clf = None
+				if args.solver is None:
+					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
+				else:
+					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
 				if args.kernel == "precomputed":
 					# Note: metric here is distance metric = 1 - sim_metric
 					metric = args.metric
