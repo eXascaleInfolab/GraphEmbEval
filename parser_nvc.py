@@ -156,6 +156,7 @@ def loadNvc(nvcfile):
 						for ipt, pt in enumerate(parts):
 							ibeg = v.find(pt[0]) + 1
 							pt[1][iv] = v[ibeg : None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg)]
+					assert rootdims is None or ird == len(rootdims), 'Rootdims formation validation failed'
 				continue
 
 			# Construct the matrix
