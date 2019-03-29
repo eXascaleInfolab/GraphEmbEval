@@ -125,23 +125,23 @@ def loadNvc(nvcfile):
 						rootdims = np.empty(rootdnum, np.uint16)
 
 					# [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!]
-					elems = []  # Filling elements
+					parts = []  # Parsing parts
 					pos = vals[0].find('%') + 1
 					if dimnum and pos != 0:
 						dimrds = np.empty(dimnum, np.float32)
-						elems.append(('%', dimrds))
+						parts.append(('%', dimrds))
 					pos = vals[0].find('/', pos) + 1
 					if dimnum and pos != 0:
 						dimrws = np.empty(dimnum, np.float32)
-						elems.append(('/', dimrws))
+						parts.append(('/', dimrws))
 					pos = vals[0].find(':', pos) + 1
 					if dimnum and pos != 0:
 						dimwsim = np.empty(dimnum, np.float32)
-						elems.append((':', dimwsim))
+						parts.append((':', dimwsim))
 					pos = vals[0].find('-', pos) + 1
 					if dimnum and pos != 0:
 						dimwdis = np.empty(dimnum, np.float32)
-						elems.append(('-', dimwdis))
+						parts.append(('-', dimwdis))
 
 					if dimrds is None and dimrws is None and dimwsim is None and dimwdis is None and rootdims is None:
 						continue
@@ -153,9 +153,9 @@ def loadNvc(nvcfile):
 							ird += 1
 							v = v[:-1]
 						# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]]
-						for ie, e in enumerate(elems):
-							ibeg = v.find(e[0]) + 1
-							e[1][iv] = v[ibeg : None if ie + 1 == len(elems) else v.find(elems[ie + 1][0], ibeg)]
+						for ipt, pt in enumerate(parts):
+							ibeg = v.find(pt[0]) + 1
+							pt[1][iv] = v[ibeg : None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg)]
 				continue
 
 			# Construct the matrix
