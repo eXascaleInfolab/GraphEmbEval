@@ -98,7 +98,8 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear, lbfgs (parallel, less accurate). ATTENTION: has priority over the SVM kernel')
+	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear, lbfgs (parallel, less accurate)'
+						'. ATTENTION: has priority over the SVM kernel')
 	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
 						', rbf (accurate but slower), linear')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
@@ -138,6 +139,9 @@ def evalEmbCls(args):
 
 	# 0. Files
 	embeddings_file = args.emb
+	rootdims = None  # Indices of the root dimensions
+	dimrds = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically >= 1
+	dimrws = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically <= 1
 	dimwsim = None  # Dimension weights (significance ratios)
 	dimwdis = None  # Dimension weights for the dissimilarity
 
@@ -150,7 +154,7 @@ def evalEmbCls(args):
 		# Map nodes to their features
 		features_matrix = mat['embs']
 	elif args.emb.lower().endswith('.nvc'):
-		features_matrix, dimwsim, dimwdis = loadNvc(args.emb)
+		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.emb)
 		# Omit dissimilarity weighting if required
 		if args.no_dissim:
 			dimwdis = None
