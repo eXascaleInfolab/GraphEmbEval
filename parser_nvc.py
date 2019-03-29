@@ -112,6 +112,7 @@ def loadNvc(nvcfile):
 						#print('hdrvals:',hdrvals, '\nnumbered:', numbered)
 				elif not ftr:
 					# Parse the footer
+					# [Diminfo> <cl0_id>[#<cl0_levid>][%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!] ...
 					vals = ln[1:].split(None, 1)
 					if not vals or vals[0].lower() != 'diminfo>':
 						continue
@@ -123,6 +124,7 @@ def loadNvc(nvcfile):
 					if rootdnum:
 						rootdims = np.empty(rootdnum, np.uint16)
 
+					# [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!]
 					elems = []  # Filling elements
 					pos = vals[0].find('%') + 1
 					if dimnum and pos != 0:
@@ -145,10 +147,12 @@ def loadNvc(nvcfile):
 						continue
 					ird = 0  # Index in the rootdims array
 					for iv, v in enumerate(vals):
+						# Fetch root indices
 						if v.endswith('!'):
 							rootdims[ird] = iv
 							ird += 1
 							v = v[:-1]
+						# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]]
 						for ie, e in enumerate(elems):
 							ibeg = v.find(e[0]) + 1
 							e[1][iv] = v[ibeg : None if ie + 1 == len(elems) else v.find(elems[ie + 1][0], ibeg)]
