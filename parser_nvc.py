@@ -31,7 +31,6 @@ def loadNvc(nvcfile):
 	ndsnum = 0  # The number of nodes
 	dimnum = 0  # The number of dimensions (reprsentative clusters)
 	rootdnum = 0  # The number of root dimensions (reprsentative clusters)
-	valmin = 0  # minimal value (bottom margin) accounted in the node vectors, affects interpretation of the encoded values (format range)
 	numbered = False
 	rootdims = None  # Indices of the root dimensions
 	dimrds = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically >= 1
@@ -53,6 +52,8 @@ def loadNvc(nvcfile):
 	irow = 0  # Payload line (matrix row) index (of either dimensions or nodes)
 	nvec = None  # Node vectors matrix
 	vqnorm = np.uint16(0xFF if valfmt == VAL_UINT8 else 0xFFFF)  # Normalization value for the vector quantification based compression
+	valmin = 0  # Minimal value (bottom margin) accounted in the node vectors, affects interpretation of the encoded values (format range)
+	valcorr = 0  # Value correction caused by valmin
 
 	with open(nvcfile, 'r') as fnvc:
 		for ln in fnvc:
@@ -105,8 +106,10 @@ def loadNvc(nvcfile):
 							valfmt = VAL_BIT
 						elif valstr == 'uint8':
 							valfmt = VAL_UINT8
+							valcorr = np.float32(max(valmin - 1. / vqnorm, 0))
 						elif valstr == 'uint16':
 							valfmt = VAL_UINT16
+							valcorr = np.float32(max(valmin - 1. / vqnorm, 0))
 						elif valstr == 'float32':
 							valfmt = VAL_FLOAT32
 						else:
@@ -181,7 +184,7 @@ def loadNvc(nvcfile):
 					nids, vals = zip(*[v.split(':') for v in vals])
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
 						# vals = [np.float32(1. / np.uint16(v)) for v in vals]
-						vals = [valmin + (1 - valmin) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
+						vals = [valcorr + (1 - valcorr) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
 					else:
 						assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
 					for i, nd in enumerate(nids):
@@ -194,7 +197,7 @@ def loadNvc(nvcfile):
 					dms, vals = zip(*[v.split(':') for v in vals])
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
 						# vals = [np.float32(1. / np.uint16(v)) for v in vals]
-						vals = [valmin + (1 - valmin) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
+						vals = [valcorr + (1 - valcorr) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm for v in vals]
 					else:
 						assert valfmt == VAL_FLOAT32, 'Unexpected valfmt'
 					for i, dm in enumerate(dms):
@@ -205,7 +208,7 @@ def loadNvc(nvcfile):
 					if v[0] != '0':
 						if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
 							# nvec[irow, j + corr] = 1. / np.uint16(v)
-							nvec[irow, j + corr] = valmin + (1 - valmin) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
+							nvec[irow, j + corr] = valcorr + (1 - valcorr) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
 						else:
 							assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
 							nvec[irow, j + corr] = v
@@ -224,7 +227,7 @@ def loadNvc(nvcfile):
 						continue
 					if valfmt == VAL_UINT8 or valfmt == VAL_UINT16:
 						# nvec[irow, j + corr] = 1. / np.uint16(v)
-						nvec[irow, j + corr] = valmin + (1 - valmin) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
+						nvec[irow, j + corr] = valcorr + (1 - valcorr) * np.float32(vqnorm - np.uint16(v) + 1) / vqnorm
 					else:
 						assert valfmt == VAL_FLOAT32 or valfmt == VAL_BIT, 'Unexpected valfmt'
 						nvec[irow, j + corr] = v
