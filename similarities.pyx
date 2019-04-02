@@ -10,12 +10,15 @@
 :Date: 2019-03
 """
 from __future__ import print_function, division  # Required for stderr output, must be the first import
-# import numpy as np
+from scipy.sparse import coo_matrix, isspmatrix_coo
+import numpy as np  # Used for the doctests
+
 cdef extern from 'math.h':
 	float fminf(float x, float y) nogil
 	float fmaxf(float x, float y) nogil
 	float fabsf(float x) nogil
-from libc.math cimport sqrt as c_sqrt #, fminf, fmaxf, fabsf
+from libc.math cimport sqrt as c_sqrt  #, fminf, fmaxf, fabsf
+# from libc.math cimport fminf, fmaxf, fabsf
 # cdef extern from "math.h":
 #	double sqrt "c_sqrt"(double x)
 # from cython.parallel import prange
@@ -25,6 +28,9 @@ cimport cython
 
 # Types declarations -----------------------------------------------------------
 ctypedef float  ValT  # Value type, np.float32_t
+# ctypedef fused ValT:
+# 	float
+# 	double
 # ctypedef floating ValT  # The same as follows and causes generation of the sources for each specialization
 # ctypedef fused ValT:
 # 	np.float32_t
@@ -52,7 +58,13 @@ cpdef enum Similarities:
 
 
 # Function declarations --------------------------------------------------------
-def sim_id(sim):
+def sim_id(str sim):
+	"""Fetch similarity function id by the string name
+
+	sim: str  - name of the similarity funciton
+
+	return simid: Similarities  - id of the similarity function
+	"""
 	sim = sim.lower()
 	if sim == 'cosine':
 		return SIM_COSINE
@@ -60,10 +72,30 @@ def sim_id(sim):
 		return SIM_JACCARD
 	elif sim == 'hamming':
 		return SIM_HAMMING
-	elif sim == 'dissim':
-		return SIM_DISSIM
+	# elif sim == 'dissim':
+	# 	return SIM_DISSIM
 	else:
 		raise ValueError('Unknown similrity value: ' + sim)
+
+
+def colindicesnz(mat not None):
+	"""Form iterable of column indices of the non-zero items per each row
+
+	mat: coo_matrix  - input matrix in the COOrdinate format
+
+	return  res: list  - list of column indices of the non-zero items per each row
+
+	>>> colindicesnz(coo_matrix([[1,0,2], [0,2,0]], dtype=np.uint8))
+	[[0, 2], [1]]
+	"""
+	assert len(mat.shape) == 2 and isspmatrix_coo(mat), 'A valid COO matrix is expected'
+	cdef:
+		list  res = [[] for _ in range(mat.shape[0])]
+		unsigned  i
+
+	for i, r in enumerate(mat.row):
+		res[r].append(mat.col[i])
+	return res
 
 
 # Note: "nogil" suffix can be used with parallel elementwise operations dealing
@@ -114,6 +146,9 @@ def sim_cosine(ValArrayT a not None, ValArrayT b not None):
 
 	return
 		sim: ValT  - Cosine similarity between the input arrays
+
+	>>> round(sim_cosine(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.787347
 	"""
 	if a.shape[0] != b.shape[0] or a.size != a.shape[0] or b.size != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
@@ -163,6 +198,9 @@ def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 
 	return
 		sim: ValT  - Jaccard similarity between the input arrays
+
+	>>> round(sim_jaccard(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.333333
 	"""
 	if a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
@@ -212,6 +250,9 @@ def sim_hamming(ValArrayT a not None, ValArrayT b not None):
 
 	return
 		sim: ValT  - Hamming similarity between the input arrays
+
+	>>> round(sim_hamming(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.333333
 	"""
 	if a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
@@ -261,6 +302,9 @@ def dissim(ValArrayT a not None, ValArrayT b not None):
 
 	return
 		sim: ValT  - Jaccard-like dissimilarity between the input arrays
+
+	>>> round(dissim(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.666667
 	"""
 	if a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
@@ -280,8 +324,8 @@ cdef SimilarityF c_sim_metric(Similarities sim):
 		return c_sim_jaccard
 	elif sim == SIM_HAMMING:
 		return c_sim_hamming
-	elif sim == SIM_DISSIM:
-		return c_dissim
+	# elif sim == SIM_DISSIM:
+	# 	return c_dissim
 	else:
 		raise ValueError('Unexpected similarity function: ' + str(sim))
 
@@ -295,39 +339,81 @@ def pairsim(ValMatrixT res not None, ValMatrixT x not None, Similarities sim):
 	res: ValMatrixT  - resulting similarity matrix NxN. Note: all values are rewritten
 	x: ValMatrixT  - input array of vectors NxD
 	sim: Similarities  - applied similarity metric
+
+	>>> res = np.empty((2, 2), dtype=np.float32);\
+		pairsim(res, np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32), SIM_JACCARD);\
+		np.round(res, 6).sum() == np.array([[1, 0.333333], [0.333333, 1]], dtype=np.float32).sum()\
+			and res.shape == (2, 2)
+	True
 	"""
 	assert res.shape[0] == res.shape[1] and res.shape[0] == x.shape[0], 'Matrix shapes validation failed'
 
 	cdef:
 		SimilarityF  simf = c_sim_metric(sim)
-		unsigned  ia, ib, imax = x.shape[0]
-		ValT  selfsim = 1 if sim != SIM_DISSIM else 0
+		unsigned  ia, ib, iend = x.shape[0]
+		ValT  selfsim = 1 #if sim != SIM_DISSIM else 0
 
-	if imax >= 2:
+	if iend >= 2:
 		# Disable GIL lock
 		with nogil:
-			for ia in range(imax-1):  # prange(imax-1, nogil=True)
-				for ib in range(ia+1, imax):
+			for ia in range(iend-1):  # prange(iend-1, nogil=True)
+				for ib in range(ia+1, iend):
 					res[ia, ib] = simf(x[ia], x[ib])
 					res[ib, ia] = res[ia, ib]
 				res[ia, ia] = selfsim
-	else:
-		res[imax, imax] = selfsim
+	res[iend-1, iend-1] = selfsim
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def pairsim2(ValMatrixT res, ValMatrixT xa, ValMatrixT xb, Similarities sim):
+def pairsimdis(ValMatrixT res not None, ValMatrixT xs not None, ValMatrixT xd not None, Similarities sim):
+	"""Compose pairwise similarity (Gram) matrix for the input arrays of similarity
+	and dissimilarity based weighted vectors
+
+	res: ValMatrixT  - resulting similarity matrix NxN. Note: all values are rewritten
+	xs: ValMatrixT  - input array of similarity based weighted vectors NxD
+	xd: ValMatrixT  - input array of dissimilarity based weighted vectors NxD
+	sim: Similarities  - applied similarity metric
+	"""
+	assert res.shape[0] == res.shape[1] and xs.shape == xd.shape, 'Matrix shapes validation failed'
+
+	cdef:
+		SimilarityF  simf = c_sim_metric(sim)
+		unsigned  ia, ib, iend = xs.shape[0]
+		ValT  selfsim = 1 #if sim != SIM_DISSIM else 0
+
+	if iend >= 2:
+		# Disable GIL lock
+		with nogil:
+			for ia in range(iend-1):  # prange(iend-1, nogil=True)
+				for ib in range(ia+1, iend):
+					res[ia, ib] = (simf(xs[ia], xs[ib]) - c_dissim(xd[ia], xd[ib]) + 1) / 2
+					res[ib, ia] = res[ia, ib]
+				res[ia, ia] = selfsim
+	res[iend-1, iend-1] = selfsim
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def pairsim2(ValMatrixT res, ValMatrixT xa not None, ValMatrixT xb not None, Similarities sim):
 	"""Compose pairwise similarity (Gram) matrix for each inter pair of the vectors of the input arrays
 
 	res: ValMatrixT  - resulting similarity matrix NxM. Note: all values are rewritten
 	xa: ValMatrixT  - input array of vectors NxD
 	xb: ValMatrixT  - input array of vectors MxD
 	sim: Similarities  - applied similarity metric
+
+	>>> res = np.empty((2, 1), dtype=np.float32);\
+		pairsim2(res, np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32)\
+			, np.array([[0.3, 0.6, 0]], dtype=np.float32), SIM_JACCARD);\
+		np.round(res, 6).sum() == np.array([[0.375], [0.777778]], dtype=np.float32).sum()\
+			and res.shape == (2, 1)
+	True
 	"""
 	assert (res.shape[0] == xa.shape[0] and res.shape[1] == xb.shape[0]
-			and xa.shape[1] == xb.shape[1]), 'Matrix shapes validation failed'
+		and xa.shape[1] == xb.shape[1]), 'Matrix shapes validation failed'
 
 	cdef:
 		SimilarityF  simf = c_sim_metric(sim)
@@ -338,3 +424,33 @@ def pairsim2(ValMatrixT res, ValMatrixT xa, ValMatrixT xb, Similarities sim):
 		for ia in range(xa.shape[0]):  # prange(xa.shape[0], nogil=True)
 			for ib in range(xb.shape[0]):
 				res[ia, ib] = simf(xa[ia], xb[ib])
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def pairsimdis2(ValMatrixT res, ValMatrixT xas not None, ValMatrixT xbs not None
+, ValMatrixT xad not None, ValMatrixT xbd not None, Similarities sim):
+	"""Compose pairwise similarity (Gram) matrix for each inter pair of the vectors
+	of the input arrays of similarity and dissimilarity based weighted
+
+	res: ValMatrixT  - resulting similarity matrix NxM. Note: all values are rewritten
+	xas: ValMatrixT  - input array of similarity based weighted vectors NxD
+	xad: ValMatrixT  - input array of dissimilarity based weighted vectors NxD
+	xbs: ValMatrixT  - input array of similarity based weighted vectors MxD
+	xbb: ValMatrixT  - input array of dissimilarity based weighted vectors MxD
+	sim: Similarities  - applied similarity metric
+	"""
+	assert (res.shape[0] == xas.shape[0] and res.shape[1] == xbs.shape[0]
+		and xas.shape[1] == xbs.shape[1] and xas.shape == xad.shape
+		and xbs.shape == xbd.shape), 'Matrix shapes validation failed'
+
+	cdef:
+		SimilarityF  simf = c_sim_metric(sim)
+		unsigned  ia, ib
+
+	# Disable GIL lock
+	with nogil:
+		for ia in range(xas.shape[0]):  # prange(xa.shape[0], nogil=True)
+			for ib in range(xbs.shape[0]):
+				res[ia, ib] = (simf(xas[ia], xbs[ib]) - c_dissim(xad[ia], xbd[ib]) + 1) / 2

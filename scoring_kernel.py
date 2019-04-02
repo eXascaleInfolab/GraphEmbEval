@@ -17,8 +17,9 @@ from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
 from scipy.spatial.distance import squareform, pdist, cdist, cosine as dist_cosine
-from sklearn.metrics import f1_score
+# from scipy.sparse import coo_matrix
 from scipy.io import loadmat, savemat
+from sklearn.metrics import f1_score
 from sklearn.utils import shuffle as skshuffle
 from sklearn.preprocessing import MultiLabelBinarizer
 
@@ -63,11 +64,14 @@ ValT = np.float32
 class TopKRanker(OneVsRestClassifier):
 	def predict(self, gram_test, top_k_list):
 		assert gram_test.shape[0] == len(top_k_list)
-		probs = np.asarray(super(TopKRanker, self).predict_proba(gram_test))
+		probs = super(TopKRanker, self).predict_proba(gram_test)
+		if not isinstance(probs, np.ndarray):
+			probs = probs.toarray()
 		all_labels = []
 		for i, k in enumerate(top_k_list):
-			probs_ = probs[i, :]
+			probs_ = probs[i]
 			labels = self.classes_[probs_.argsort()[-k:]].tolist()
+			# labels = self.classes_[probs_.argsort()[:k+1]].tolist()
 			all_labels.append(labels)
 		return all_labels
 
@@ -120,6 +124,7 @@ def parseArgs(opts=None):
 	parser.add_argument("-o", "--output", default='res.mat', help='Output file name for the resulting classifier.')
 	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles of the embedding matrix.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
+	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
 
 	args = parser.parse_args(opts)
 	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
@@ -182,9 +187,9 @@ def evalEmbCls(args):
 			if dis_features_matrix is not None:
 				for (i, j), v in dis_features_matrix.items():
 					dis_features_matrix[i, j] = v * dimwdis[j] if not args.wdim_min or v >= args.wdim_min else w0
-				dis_features_matrix = dis_features_matrix.todense()
+				dis_features_matrix = dis_features_matrix.toarray() #.todense() # order='C'
 				np.where(dis_features_matrix > w0, dis_features_matrix, 0)
-		features_matrix = features_matrix.todense()
+		features_matrix = features_matrix.toarray() #.todense() # order='C'
 		if dimweighted:
 			np.where(features_matrix > w0, features_matrix, 0)
 	else:
@@ -198,7 +203,7 @@ def evalEmbCls(args):
 	mat = loadmat(args.network)  # Compressed Sparse Column format
 	# A = mat[args.adj_matrix_name]
 	# graph = sparse2graph(A)
-	labels_matrix = mat[args.label_matrix_name]
+	labels_matrix = mat[args.label_matrix_name]  # csc_matrix
 	labels_count = labels_matrix.shape[1]
 	mlb = MultiLabelBinarizer(range(labels_count))
 
@@ -233,7 +238,7 @@ def evalEmbCls(args):
 			gram = np.empty((training_size, training_size), dtype=ValT)
 			gram_test = np.empty((features_matrix.shape[0] - training_size, training_size), dtype=ValT)
 			for jj, shuf in enumerate(shuffles):
-				print([ii, jj])
+				print('Training set #{} ({}%), shuffle #{}'.format(ii, train_percent*100, jj))
 				if dis_features_matrix is not None:
 					X, Xdis, y = shuf
 					#assert len(X) == len(Xdis), 'Feature matrix partitions validation failed'
@@ -241,30 +246,33 @@ def evalEmbCls(args):
 					X, y = shuf
 
 				# training_size = int(train_percent * X.shape[0])
-				X_train = X[:training_size, :]
+				X_train = X[:training_size]
 				if dis_features_matrix is not None:
-					Xdis_train = Xdis[:training_size, :]
+					Xdis_train = Xdis[:training_size]
 				y_train_ = y[:training_size]
 
-				y_train = [[] for x in range(y_train_.shape[0])]
+				# y_train = [[] for x in range(y_train_.shape[0])]
+				# cy = coo_matrix(y_train_)
+				# for i, j in zip(cy.row, cy.col):
+				# 	y_train[i].append(j)
+				# assert sum(len(l) for l in y_train) == y_train_.nnz
+				# y_train = None
 
-
-				cy =  y_train_.tocoo()
-				for i, j in zip(cy.row, cy.col):
-					y_train[i].append(j)
-
-				assert sum(len(l) for l in y_train) == y_train_.nnz
-
-				X_test = X[training_size:, :]
+				X_test = X[training_size:]
 				if dis_features_matrix is not None:
-					Xdis_test = Xdis[training_size:, :]
-				y_test_ = y[training_size:]
+					Xdis_test = Xdis[training_size:]
+				y_test = sm.colindicesnz(y[training_size:].tocoo())
 
-				y_test = [[] for _ in range(y_test_.shape[0])]
-
-				cy = y_test_.tocoo()
-				for i, j in zip(cy.row, cy.col):
-					y_test[i].append(j)
+				# y_test_ = y[training_size:]
+				# y_test = [[] for _ in range(y_test_.shape[0])]
+				# for i in range(y_test_.shape[0]):
+				# 	for j in range(y_test_.shape[1]):
+				# 		if y_test_[i, j]:
+				# 			y_test[i].append(j)
+				# # cy = coo_matrix(y_test_)
+				# # for i, j in zip(cy.row, cy.col):
+				# # 	y_test[i].append(j)
+				# y_test_ = None
 
 				# find out how many labels should be predicted
 				top_k_list = [len(l) for l in y_test]
@@ -278,43 +286,55 @@ def evalEmbCls(args):
 					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
 				if args.kernel == "precomputed":
 					# Note: metric here is distance metric = 1 - sim_metric
-					# metid = sm.sim_id(args.metric)
+					metid = sm.sim_id(args.metric)
 					metric = args.metric
 					if metric == "jaccard":
-						# metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
-						metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
+						metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+						# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 					if dis_features_matrix is None:
 						# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
-						gram = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
-						gram_test = ValT(1) - cdist(X_test, X_train, metric);
+						sm.pairsim(gram, X_train, metid)
+						# gram2 = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+						# print('Gram:\n', gram, '\nOrig Gram:\n', gram2)
+						sm.pairsim2(gram_test, X_test, X_train, metid)
+						# gram_test2 = ValT(1) - cdist(X_test, X_train, metric);
+						# print('\n\nGram test:\n', gram_test, '\nOrig Gram test:\n', gram_test2)
+						# # gram = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+						# # gram_test = ValT(1) - cdist(X_test, X_train, metric);
 					else:
-						# def dis_metric(u, v):
-						#  	"""Jaccard-like dissimilarity distance metric"""
-						#  	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+						# # def dis_metric(u, v):
+						# #  	"""Jaccard-like dissimilarity distance metric"""
+						# #  	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+						#
+						# if metric == "cosine":
+						# 	metric = dist_cosine
+						# #dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
+						# dis_metric = sm.dissim
 
-						if metric == "cosine":
-							metric = dist_cosine
-						#dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
-						dis_metric = sm.dissim
-
-						sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
-						icur = 0
-						for i in range(training_size - 1):
-							for j in range(i + 1, training_size):
-								#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
-								# Note: positive gram matrix yields abit more accurate resutls
-								sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
-								icur += 1
-						assert icur == len(sims), 'sims size validation failed'
-						gram = squareform(sims)
-						# gram_test = 1 - cdist(X_test, X_train, metric);
-						#gram_test = squareform(sims_test)
-						#gram_test = np.empty((len(X_test), training_size), dtype=ValT)
-						for i in range(len(X_test)):
-							for j in range(training_size):
-								# gram_test[i, j] = ValT(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
-								# Note: positive gram matrix yields abit more accurate resutls
-								gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
+						sm.pairsimdis(gram, X_train, Xdis_train, metid)
+						# sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
+						# icur = 0
+						# for i in range(training_size - 1):
+						# 	for j in range(i + 1, training_size):
+						# 		#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+						# 		# Note: positive gram matrix yields abit more accurate resutls
+						# 		# print('> x[i].T.shape: {} ({}, T: {}), asarr(x[i]).shape: {} ({}), ravel(x[i]).shape: {} ({})'
+						# 		# 	.format(X_train[i].T.shape, hex(id(X_train[i])), hex(id(X_train[i].T))
+						# 		# 	, np.asarray(X_train[i]).shape, hex(id(np.asarray(X_train[i])))
+						# 		# 	, np.ravel(X_train[i]).shape, hex(id(np.ravel(X_train[i]))) ))
+						# 		sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
+						# 		icur += 1
+						# assert icur == len(sims), 'sims size validation failed'
+						# gram = squareform(sims)
+						# # gram_test = 1 - cdist(X_test, X_train, metric);
+						# #gram_test = squareform(sims_test)
+						# #gram_test = np.empty((len(X_test), training_size), dtype=ValT)
+						sm.pairsimdis2(gram_test, X_test, X_train, Xdis_test, Xdis_train, metid)
+						# for i in range(len(X_test)):
+						# 	for j in range(training_size):
+						# 		# gram_test[i, j] = ValT(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+						# 		# Note: positive gram matrix yields abit more accurate resutls
+						# 		gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
 				else: #if args.solver in ('liblinear', 'lbfgs') or args.kernel in ('rbf', 'linear'):
@@ -360,27 +380,39 @@ def evalEmbCls(args):
 if __name__ == "__main__":
 	args = None
 	pr = None
-	try:
-		args = parseArgs()
+	args = parseArgs()
+	if args.sim_tests:
+		# Doc tests execution
+		import doctest
+		# import pyximport; pyximport.install()
+		#doctest.testmod()  # Detailed tests output
+		flags = doctest.REPORT_NDIFF | doctest.REPORT_ONLY_FIRST_FAILURE
+		failed, total = doctest.testmod(sm, optionflags=flags)
+		if failed:
+			print("Doctest FAILED: {} failures out of {} tests".format(failed, total))
+		else:
+			print('Doctest PASSED: {} tests'.format(total))
+	else:
 		PROFILE = PROFILE and (not args or args.profile)
 		if PROFILE:
 			pr = prof.Profile()
 			pr.enable()
-		evalEmbCls(args)
-	finally:
-		if pr:
-			pr.disable()
-			sio = io.StringIO()
-			ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
-			ps.print_stats(30)
-			if args and args.output:
-				print(sio.getvalue())
-				profname = os.path.splitext(args.output)[0] + '.prof'
-				with open(profname, 'a') as fout:
-					fout.write('$ ')
-					fout.write(' '.join(sys.argv))
-					fout.write('\n')
-					fout.write(sio.getvalue())
-					#fout.write('\n')
-					fout.write('-'*80)
-					fout.write('\n')
+		try:
+			evalEmbCls(args)
+		finally:
+			if pr:
+				pr.disable()
+				sio = io.StringIO()
+				ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
+				ps.print_stats(30)
+				if args and args.output:
+					print(sio.getvalue())
+					profname = os.path.splitext(args.output)[0] + '.prof'
+					with open(profname, 'a') as fout:
+						fout.write('$ ')
+						fout.write(' '.join(sys.argv))
+						fout.write('\n')
+						fout.write(sio.getvalue())
+						#fout.write('\n')
+						fout.write('-'*80)
+						fout.write('\n')
