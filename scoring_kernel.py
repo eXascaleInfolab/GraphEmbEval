@@ -236,6 +236,7 @@ def evalEmbCls(args):
 	#     for shuf in shuffles:
 	Xdis = None
 	Xdis_train = None
+	res_ave = None  # Average results
 	try:
 		for ii, train_percent in enumerate(training_percents):
 			training_size = int(train_percent * features_matrix.shape[0])
@@ -362,7 +363,7 @@ def evalEmbCls(args):
 		res_ave = np.nanmean(res, 0)
 		print("F1 [micro macro]:")
 		print(res_ave)
-		if len(res) >= 2:
+		if len(res_ave) >= 2:
 			print("Average:", np.nanmean(res_ave, 0))
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
@@ -381,6 +382,7 @@ def evalEmbCls(args):
 	#   print ('-------------------')
 
 	savemat(args.output, mdict={'res': res})
+	#return res_ave
 
 
 if __name__ == "__main__":
@@ -405,7 +407,9 @@ if __name__ == "__main__":
 		if PROFILE:
 			pr = prof.Profile()
 			pr.enable()
+		# res = None
 		try:
+			#res = evalEmbCls(args)
 			evalEmbCls(args)
 		finally:
 			if pr:
@@ -414,11 +418,19 @@ if __name__ == "__main__":
 				ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
 				ps.print_stats(30)
 				if args and args.output:
-					print(sio.getvalue())
+					# Trace profiling to the terminal
+					print(sio.getvalue(),file=sys.stderr)
+					# Output profiling to the file
 					profname = os.path.splitext(args.output)[0] + '.prof'
 					with open(profname, 'a') as fout:
 						fout.write('$ ')
 						fout.write(' '.join(sys.argv))
+						# # Output evaluation results
+						# if res is not None:
+						# 	fout.write('\nF1 [micro macro]:')
+						# 	print(res, file=fout)
+						# 	if len(res) >= 2:
+						# 		print("Average:", np.nanmean(res, 0), file=fout)
 						fout.write('\n')
 						fout.write(sio.getvalue())
 						#fout.write('\n')
