@@ -33,12 +33,15 @@ import numpy as np
 import os
 import sys
 
-# Note: pyximport does not work with imported libc functions
-DEBUG = True
-if DEBUG:
-	import pyximport; pyximport.install()  # Automatic build of the Cython modules
-import similarities as sm
-
+# Enable optimized routines from the Cython lib
+OPTIMIZED = True  # True
+# Enable automatic rebuild of the Cython modules on changes
+# (might have dependency issues in the end-user environment)
+AUTOREBUILD = False  # True;
+if OPTIMIZED:
+	if AUTOREBUILD:
+		import pyximport; pyximport.install()  # Automatic build of the Cython modules
+	import similarities as sm
 
 PROFILE = True
 if PROFILE:
@@ -70,8 +73,8 @@ class TopKRanker(OneVsRestClassifier):
 		all_labels = []
 		for i, k in enumerate(top_k_list):
 			probs_ = probs[i]
+			# Fetch test labels
 			labels = self.classes_[probs_.argsort()[-k:]].tolist()
-			# labels = self.classes_[probs_.argsort()[:k+1]].tolist()
 			all_labels.append(labels)
 		return all_labels
 
@@ -88,7 +91,7 @@ class TopKRanker(OneVsRestClassifier):
 
 
 # Default values
-_trainperc_dfl = [0.9]  # [0.1, 0.5, 0.9]
+_trainperc_dfl = [0.1, 0.5, 0.9]  # [0.9]
 
 
 def parseArgs(opts=None):
@@ -125,6 +128,7 @@ def parseArgs(opts=None):
 	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles of the embedding matrix.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
+	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
 	args = parser.parse_args(opts)
 	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
@@ -235,7 +239,8 @@ def evalEmbCls(args):
 	try:
 		for ii, train_percent in enumerate(training_percents):
 			training_size = int(train_percent * features_matrix.shape[0])
-			gram = np.empty((training_size, training_size), dtype=ValT)
+			if OPTIMIZED:
+				gram = np.empty((training_size, training_size), dtype=ValT)
 			gram_test = np.empty((features_matrix.shape[0] - training_size, training_size), dtype=ValT)
 			for jj, shuf in enumerate(shuffles):
 				print('Training set #{} ({}%), shuffle #{}'.format(ii, train_percent*100, jj))
@@ -251,28 +256,22 @@ def evalEmbCls(args):
 					Xdis_train = Xdis[:training_size]
 				y_train_ = y[:training_size]
 
-				# y_train = [[] for x in range(y_train_.shape[0])]
-				# cy = coo_matrix(y_train_)
-				# for i, j in zip(cy.row, cy.col):
-				# 	y_train[i].append(j)
-				# assert sum(len(l) for l in y_train) == y_train_.nnz
-				# y_train = None
-
 				X_test = X[training_size:]
 				if dis_features_matrix is not None:
 					Xdis_test = Xdis[training_size:]
-				y_test = sm.colindicesnz(y[training_size:].tocoo())
-
-				# y_test_ = y[training_size:]
-				# y_test = [[] for _ in range(y_test_.shape[0])]
-				# for i in range(y_test_.shape[0]):
-				# 	for j in range(y_test_.shape[1]):
-				# 		if y_test_[i, j]:
-				# 			y_test[i].append(j)
-				# # cy = coo_matrix(y_test_)
-				# # for i, j in zip(cy.row, cy.col):
-				# # 	y_test[i].append(j)
-				# y_test_ = None
+				if OPTIMIZED:
+					y_test = sm.colindicesnz(y[training_size:].tocoo())
+				else:
+					y_test_ = y[training_size:]
+					y_test = [[] for _ in range(y_test_.shape[0])]
+					for i in range(y_test_.shape[0]):
+						for j in range(y_test_.shape[1]):
+							if y_test_[i, j]:
+								y_test[i].append(j)
+					# cy = coo_matrix(y_test_)
+					# for i, j in zip(cy.row, cy.col):
+					# 	y_test[i].append(j)
+					y_test_ = None
 
 				# find out how many labels should be predicted
 				top_k_list = [len(l) for l in y_test]
@@ -286,55 +285,62 @@ def evalEmbCls(args):
 					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
 				if args.kernel == "precomputed":
 					# Note: metric here is distance metric = 1 - sim_metric
-					metid = sm.sim_id(args.metric)
-					metric = args.metric
-					if metric == "jaccard":
-						metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
-						# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
-					if dis_features_matrix is None:
-						# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
-						sm.pairsim(gram, X_train, metid)
-						# gram2 = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
-						# print('Gram:\n', gram, '\nOrig Gram:\n', gram2)
-						sm.pairsim2(gram_test, X_test, X_train, metid)
-						# gram_test2 = ValT(1) - cdist(X_test, X_train, metric);
-						# print('\n\nGram test:\n', gram_test, '\nOrig Gram test:\n', gram_test2)
-						# # gram = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
-						# # gram_test = ValT(1) - cdist(X_test, X_train, metric);
+					if OPTIMIZED:
+						metid = sm.sim_id(args.metric)
 					else:
-						# # def dis_metric(u, v):
-						# #  	"""Jaccard-like dissimilarity distance metric"""
-						# #  	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
-						#
-						# if metric == "cosine":
-						# 	metric = dist_cosine
-						# #dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
-						# dis_metric = sm.dissim
+						metric = args.metric
+						if metric == "jaccard":
+							metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+							# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
+					if dis_features_matrix is None:
+						if OPTIMIZED:
+							# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
+							sm.pairsim(gram, X_train, metid)
+							# gram2 = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+							# print('Gram:\n', gram, '\nOrig Gram:\n', gram2)
+							sm.pairsim2(gram_test, X_test, X_train, metid)
+							# gram_test2 = ValT(1) - cdist(X_test, X_train, metric);
+							# print('\n\nGram test:\n', gram_test, '\nOrig Gram test:\n', gram_test2)
+						else:
+							gram = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+							gram_test = ValT(1) - cdist(X_test, X_train, metric);
+					else:
+						if OPTIMIZED:
+							sm.pairsimdis(gram, X_train, Xdis_train, metid)
+							sm.pairsimdis2(gram_test, X_test, X_train, Xdis_test, Xdis_train, metid)
+						else:
+							if metric == "cosine":
+								metric = dist_cosine
+							if OPTIMIZED:
+								dis_metric = sm.dissim
+							else:
+								def dis_metric(u, v):
+									"""Jaccard-like dissimilarity distance metric"""
+									return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+								#dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
 
-						sm.pairsimdis(gram, X_train, Xdis_train, metid)
-						# sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
-						# icur = 0
-						# for i in range(training_size - 1):
-						# 	for j in range(i + 1, training_size):
-						# 		#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
-						# 		# Note: positive gram matrix yields abit more accurate resutls
-						# 		# print('> x[i].T.shape: {} ({}, T: {}), asarr(x[i]).shape: {} ({}), ravel(x[i]).shape: {} ({})'
-						# 		# 	.format(X_train[i].T.shape, hex(id(X_train[i])), hex(id(X_train[i].T))
-						# 		# 	, np.asarray(X_train[i]).shape, hex(id(np.asarray(X_train[i])))
-						# 		# 	, np.ravel(X_train[i]).shape, hex(id(np.ravel(X_train[i]))) ))
-						# 		sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
-						# 		icur += 1
-						# assert icur == len(sims), 'sims size validation failed'
-						# gram = squareform(sims)
-						# # gram_test = 1 - cdist(X_test, X_train, metric);
-						# #gram_test = squareform(sims_test)
-						# #gram_test = np.empty((len(X_test), training_size), dtype=ValT)
-						sm.pairsimdis2(gram_test, X_test, X_train, Xdis_test, Xdis_train, metid)
-						# for i in range(len(X_test)):
-						# 	for j in range(training_size):
-						# 		# gram_test[i, j] = ValT(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
-						# 		# Note: positive gram matrix yields abit more accurate resutls
-						# 		gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
+							sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
+							icur = 0
+							for i in range(training_size - 1):
+								for j in range(i + 1, training_size):
+									#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+									# Note: positive gram matrix yields abit more accurate resutls
+									# print('> x[i].T.shape: {} ({}, T: {}), asarr(x[i]).shape: {} ({}), ravel(x[i]).shape: {} ({})'
+									# 	.format(X_train[i].T.shape, hex(id(X_train[i])), hex(id(X_train[i].T))
+									# 	, np.asarray(X_train[i]).shape, hex(id(np.asarray(X_train[i])))
+									# 	, np.ravel(X_train[i]).shape, hex(id(np.ravel(X_train[i]))) ))
+									sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
+									icur += 1
+							assert icur == len(sims), 'sims size validation failed'
+							gram = squareform(sims)
+
+							# gram_test = 1 - cdist(X_test, X_train, metric);
+							#gram_test = np.empty((len(X_test), training_size), dtype=ValT)
+							for i in range(len(X_test)):
+								for j in range(training_size):
+									# gram_test[i, j] = ValT(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+									# Note: positive gram matrix yields abit more accurate resutls
+									gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
 				else: #if args.solver in ('liblinear', 'lbfgs') or args.kernel in ('rbf', 'linear'):
@@ -381,6 +387,8 @@ if __name__ == "__main__":
 	args = None
 	pr = None
 	args = parseArgs()
+	if args.no_cython:
+		OPTIMIZED = False
 	if args.sim_tests:
 		# Doc tests execution
 		import doctest

@@ -17,7 +17,7 @@ extensions = [
 		['similarities.pyx'],
 		# "myPackage.myModule",
 		# ["myPackage/myModule.pyx"],
-		# include_dirs=[],
+		include_dirs=[np.get_include()],
 		libraries=['m'],  # libc
 		# library_dirs=[]
 	)
