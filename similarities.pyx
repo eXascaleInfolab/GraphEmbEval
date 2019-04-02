@@ -388,6 +388,7 @@ def pairsimdis(ValMatrixT res not None, ValMatrixT xs not None, ValMatrixT xd no
 		with nogil:
 			for ia in range(iend-1):  # prange(iend-1, nogil=True)
 				for ib in range(ia+1, iend):
+					# res[ia, ib] = simf(xs[ia], xs[ib]) - c_dissim(xd[ia], xd[ib])  # Note: signed values provide lower accuracy
 					res[ia, ib] = (simf(xs[ia], xs[ib]) - c_dissim(xd[ia], xd[ib]) + 1) / 2
 					res[ib, ia] = res[ia, ib]
 				res[ia, ia] = selfsim
@@ -453,4 +454,5 @@ def pairsimdis2(ValMatrixT res, ValMatrixT xas not None, ValMatrixT xbs not None
 	with nogil:
 		for ia in range(xas.shape[0]):  # prange(xa.shape[0], nogil=True)
 			for ib in range(xbs.shape[0]):
+				# res[ia, ib] = simf(xas[ia], xbs[ib]) - c_dissim(xad[ia], xbd[ib])  # Note: signed values provide lower accuracy
 				res[ia, ib] = (simf(xas[ia], xbs[ib]) - c_dissim(xad[ia], xbd[ib]) + 1) / 2
