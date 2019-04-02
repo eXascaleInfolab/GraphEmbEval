@@ -16,7 +16,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
-from scipy.spatial.distance import squareform, pdist, cdist, cosine
+from scipy.spatial.distance import squareform, pdist, cdist, cosine as dist_cosine
 from sklearn.metrics import f1_score
 from scipy.io import loadmat, savemat
 from sklearn.utils import shuffle as skshuffle
@@ -31,6 +31,12 @@ except ImportError:
 import numpy as np
 import os
 import sys
+
+# Note: pyximport does not work with imported libc functions
+DEBUG = True
+if DEBUG:
+	import pyximport; pyximport.install()  # Automatic build of the Cython modules
+import similarities as sm
 
 
 PROFILE = True
@@ -48,6 +54,10 @@ if PROFILE:
 		sk_time = 'time'  # 1  # 'time'
 		sk_cumulative = 'cumulative'  # 2, 'cumulative'
 	import pstats
+
+
+# Predefined types
+ValT = np.float32
 
 
 class TopKRanker(OneVsRestClassifier):
@@ -73,6 +83,7 @@ class TopKRanker(OneVsRestClassifier):
 #	return np.count_nonzero(a==b)/len(X)
 
 
+# Default values
 _trainperc_dfl = [0.9]  # [0.1, 0.5, 0.9]
 
 
@@ -211,13 +222,16 @@ def evalEmbCls(args):
 		training_percents = _trainperc_dfl
 
 	averages = ["micro", "macro"]
-	res = np.full([args.num_shuffles, len(training_percents), len(averages)], np.nan, dtype=np.float32)
+	res = np.full([args.num_shuffles, len(training_percents), len(averages)], np.nan, dtype=ValT)
 	# for train_percent in training_percents:
 	#     for shuf in shuffles:
 	Xdis = None
 	Xdis_train = None
 	try:
 		for ii, train_percent in enumerate(training_percents):
+			training_size = int(train_percent * features_matrix.shape[0])
+			gram = np.empty((training_size, training_size), dtype=ValT)
+			gram_test = np.empty((features_matrix.shape[0] - training_size, training_size), dtype=ValT)
 			for jj, shuf in enumerate(shuffles):
 				print([ii, jj])
 				if dis_features_matrix is not None:
@@ -226,8 +240,7 @@ def evalEmbCls(args):
 				else:
 					X, y = shuf
 
-				training_size = int(train_percent * X.shape[0])
-
+				# training_size = int(train_percent * X.shape[0])
 				X_train = X[:training_size, :]
 				if dis_features_matrix is not None:
 					Xdis_train = Xdis[:training_size, :]
@@ -265,40 +278,43 @@ def evalEmbCls(args):
 					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
 				if args.kernel == "precomputed":
 					# Note: metric here is distance metric = 1 - sim_metric
+					# metid = sm.sim_id(args.metric)
 					metric = args.metric
 					if metric == "jaccard":
-						metric = lambda u, v: np.float32(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+						# metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+						metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 					if dis_features_matrix is None:
 						# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
-						gram = squareform(np.float32(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
-						gram_test = np.float32(1) - cdist(X_test, X_train, metric);
+						gram = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+						gram_test = ValT(1) - cdist(X_test, X_train, metric);
 					else:
-						def dis_metric(u, v):
-						 	"""Jaccard-like dissimilarity distance metric"""
-						 	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+						# def dis_metric(u, v):
+						#  	"""Jaccard-like dissimilarity distance metric"""
+						#  	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
 
 						if metric == "cosine":
-							metric = cosine
+							metric = dist_cosine
 						#dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
+						dis_metric = sm.dissim
 
-						sims = np.empty(training_size * (training_size - 1) // 2, dtype=np.float32)
+						sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
 						icur = 0
 						for i in range(training_size - 1):
 							for j in range(i + 1, training_size):
-								#sims[icur] = np.float32(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+								#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
 								# Note: positive gram matrix yields abit more accurate resutls
-								sims[icur] = np.float32(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / np.float32(2)
+								sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
 								icur += 1
 						assert icur == len(sims), 'sims size validation failed'
 						gram = squareform(sims)
 						# gram_test = 1 - cdist(X_test, X_train, metric);
 						#gram_test = squareform(sims_test)
-						gram_test = np.empty((len(X_test), training_size), dtype=np.float32)
+						#gram_test = np.empty((len(X_test), training_size), dtype=ValT)
 						for i in range(len(X_test)):
 							for j in range(training_size):
-								# gram_test[i, j] = np.float32(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
+								# gram_test[i, j] = ValT(1) - metric(X_test[i], X_train[j]) - dis_metric(Xdis_test[i], Xdis_train[j])
 								# Note: positive gram matrix yields abit more accurate resutls
-								gram_test[i, j] = np.float32(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / np.float32(2)
+								gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
 				else: #if args.solver in ('liblinear', 'lbfgs') or args.kernel in ('rbf', 'linear'):
