@@ -287,7 +287,7 @@ def evalEmbCls(args):
 				if args.solver is None:
 					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
 				else:
-					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
+					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced', max_iter=512))
 				if args.kernel == 'precomputed':
 					# Note: metric here is distance metric = 1 - sim_metric
 					if OPTIMIZED:
@@ -370,7 +370,7 @@ def evalEmbCls(args):
 			print("Average:", finres)
 		else:
 			finres = res_ave
-		if args.results:
+		if args.results and ii + jj >= 1:  # Output only non-empty results;  np.nansum(res_ave, 0) != 0
 			if args.accuracy_detailed:
 				dname, fname = os.path.split(args.embeddings)
 				acrname = ''.join((dname, '/acr_', os.path.splitext(fname)[0], '.mat'))
@@ -383,10 +383,10 @@ def evalEmbCls(args):
 			with open(args.results, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Embeds          \t Dims\t Metric \tWgh\t NDs\t'
-						' F1mic\t F1mac\t Solver\t ExecTime\t ItsDone\tItsTotal\t StartTime\n')
+					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\t'
+						' F1mic\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime\n')
 				# Embeddings file name and Dimensions number
-				print('{: <16}\t {: >4}\t '.format(os.path.split(args.embeddings)[1]
+				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
 				# Similarity Metric
 				if args.kernel != 'precomputed':
@@ -397,10 +397,10 @@ def evalEmbCls(args):
 				# F1 micro and macro (average value)
 				print('{:.4F}\t {:.4F}\t '.format(finres[0], finres[1]), file=fres, end = '')
 				# Solver and execution time
-				print('{: >6}\t {: >8d}\t '.format((args.kernel if args.solver is None else args.solver)[:6]
+				print('{: >6}\t {: >8d}\t'.format((args.kernel if args.solver is None else args.solver)[:6]
 					, int(time.clock() - tstart)), file=fres, end = '')
 				# Iterations counters and the timestamp
-				print('{: >5}.{:0>2}\t{: >6}.{:0>2}\t {}\n'.format(ii, jj, res.shape[1], res.shape[0]
+				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\n'.format(ii, jj, res.shape[1], res.shape[0]
 					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
