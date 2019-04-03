@@ -127,13 +127,14 @@ def parseArgs(opts=None):
 						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
 	parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
 	parser.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
-	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles of the embedding matrix.')
+	parser.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
 	args = parser.parse_args(opts)
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
+	assert args.num_shuffles >= 1, 'num_shuffles is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
@@ -388,19 +389,23 @@ def evalEmbCls(args):
 				# Embeddings file name and Dimensions number
 				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
-				# Similarity Metric
+				# Similarity Metric, weighting, no-dissim and dim-val-min
 				if args.kernel != 'precomputed':
-					print('{: <7}\t{: >3}\t{: >3}\t{: >5}\t '.format('-', '-', '-', '-')
+					print('{: <7}\t{: >3}\t{: >3}\t'.format('-', '-', '-')
 						, file=fres, end = '')
 				else:
-					print('{: <7}\t{: >3d}\t{: >3d}\t{:<.4F}\t '.format(args.metric[:7], args.weighted_dims
-						, args.no_dissim, args.dim_vmin), file=fres, end = '')
+					print('{: <7}\t{: >3d}\t{: >3d}\t'.format(args.metric[:7], args.weighted_dims
+						, args.no_dissim), file=fres, end = '')
 				# F1 micro and macro (average value)
-				print('{:<.4F}\t {:<.4F}\t '.format(finres[0], finres[1]), file=fres, end = '')
+				print('{:<.4F}\t {:<.4F}\t {:<.4F}\t '.format(args.dim_vmin, finres[0], finres[1]), file=fres, end = '')
 				# Solver and execution time
 				print('{: >6}\t {: >8d}\t'.format((args.kernel if args.solver is None else args.solver)[:6]
 					, int(time.clock() - tstart)), file=fres, end = '')
-				# Iterations counters and the timestamp
+				# Folds and the timestamp
+				# Correct folds to show counts instead of indices
+				jj += 1
+				if jj == args.num_shuffles:
+					ii += 1
 				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\n'.format(ii, jj, res.shape[1], res.shape[0]
 					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
 
