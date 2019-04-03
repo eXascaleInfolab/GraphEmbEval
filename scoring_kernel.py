@@ -116,7 +116,7 @@ def parseArgs(opts=None):
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
-	parser.add_argument("--wdim-min", default=0, type=float, help='Minimal weight of the dimension value to be processed, [0, 1)')
+	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
 	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear, lbfgs (parallel, less accurate)'
 						'. ATTENTION: has priority over the SVM kernel')
 	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
@@ -133,7 +133,7 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
 	args = parser.parse_args(opts)
-	assert 0 <= args.wdim_min < 1, 'wdim_min is out of range'
+	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
@@ -194,10 +194,10 @@ def evalEmbCls(args):
 			for (i, j), v in features_matrix.items():
 				# Note: Weights cutting must be applied before the dimensions significance consideration
 				# w0 is used because 0 assignement does not work in the cycle affecting the dictionary size
-				features_matrix[i, j] = v * dimwsim[j] if not args.wdim_min or v >= args.wdim_min else w0
+				features_matrix[i, j] = v * dimwsim[j] if not args.dim_vmin or v >= args.dim_vmin else w0
 			if dis_features_matrix is not None:
 				for (i, j), v in dis_features_matrix.items():
-					dis_features_matrix[i, j] = v * dimwdis[j] if not args.wdim_min or v >= args.wdim_min else w0
+					dis_features_matrix[i, j] = v * dimwdis[j] if not args.dim_vmin or v >= args.dim_vmin else w0
 				dis_features_matrix = dis_features_matrix.toarray() #.todense() # order='C'
 				np.where(dis_features_matrix > w0, dis_features_matrix, 0)
 		features_matrix = features_matrix.toarray() #.todense() # order='C'
@@ -206,9 +206,9 @@ def evalEmbCls(args):
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.embeddings)
 
-	# Cut weights lower wdim_min if required
-	if args.wdim_min and not dimweighted:
-		np.where(features_matrix >= args.wdim_min, features_matrix, 0)
+	# Cut weights lower dim_vmin if required
+	if args.dim_vmin and not dimweighted:
+		np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
 
 	# 2. Load labels
 	mat = loadmat(args.network)  # Compressed Sparse Column format
@@ -383,19 +383,20 @@ def evalEmbCls(args):
 			with open(args.results, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\t'
+					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\tDVmin\t'
 						' F1mic\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime\n')
 				# Embeddings file name and Dimensions number
 				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
 				# Similarity Metric
 				if args.kernel != 'precomputed':
-					print('{: <7}\t{: >3}\t{: >3}\t '.format('-', '-', '-'), file=fres, end = '')
+					print('{: <7}\t{: >3}\t{: >3}\t{: >5}\t '.format('-', '-', '-', '-')
+						, file=fres, end = '')
 				else:
-					print('{: <7}\t{: >3d}\t{: >3d}\t '.format(args.metric[:7], args.weighted_dims
-						, args.no_dissim), file=fres, end = '')
+					print('{: <7}\t{: >3d}\t{: >3d}\t{:<.4F}\t '.format(args.metric[:7], args.weighted_dims
+						, args.no_dissim, args.dim_vmin), file=fres, end = '')
 				# F1 micro and macro (average value)
-				print('{:.4F}\t {:.4F}\t '.format(finres[0], finres[1]), file=fres, end = '')
+				print('{:<.4F}\t {:<.4F}\t '.format(finres[0], finres[1]), file=fres, end = '')
 				# Solver and execution time
 				print('{: >6}\t {: >8d}\t'.format((args.kernel if args.solver is None else args.solver)[:6]
 					, int(time.clock() - tstart)), file=fres, end = '')
