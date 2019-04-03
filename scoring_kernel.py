@@ -140,9 +140,10 @@ def parseArgs(opts=None):
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
-	if args.weighted_dims and args.kernel != "precomputed":
-		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
-		args.weighted_dims = False
+	if args.weighted_dims and not args.no_dissim and args.kernel != "precomputed":
+		print('WARNING, dimension no_dissim is automatically set since the dissimilarity weighting'
+			' can be considered only for the "precomputed" kernel')
+		args.no_dissim = True
 
 	if args.results is None:
 		args.results = os.path.splitext(os.path.split(args.embeddings)[1])[0] + '.res'
@@ -396,17 +397,17 @@ def evalEmbCls(args):
 			with open(args.results, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\tDVmin\t'
+					fres.write('Embeds          \t Dims\tWgh\tMetric \tNDs\tDVmin\t'
 						' F1mic\tF1miSD\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
 				# Embeddings file name and Dimensions number
-				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
-					, features_matrix.shape[1]), file=fres, end = '')
+				print('{: <16}\t {: >4}\t{: >3d}\t'.format(os.path.split(args.embeddings)[1]
+					, features_matrix.shape[1], args.weighted_dims), file=fres, end = '')
 				# Similarity Metric, weighting, no-dissim and dim-val-min
 				if args.solver is None and args.kernel == 'precomputed':
-					print('{: <7}\t{: >3d}\t{: >3d}\t'.format(args.metric[:7]
-						, args.weighted_dims, args.no_dissim), file=fres, end = '')
+					print('{: <7}\t{: >3d}\t'.format(args.metric[:7]
+						, args.no_dissim), file=fres, end = '')
 				else:
-					print('{: <7}\t{: >3}\t{: >3}\t'.format('-', '-', '-'), file=fres, end = '')
+					print('{: <7}\t{: >3}\t'.format('-', '-'), file=fres, end = '')
 				# F1 micro and macro (average value)
 				print('{:<.4F}\t {:<.4F}\t{:<.4F}\t {:<.4F}\t '.format(
 					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end = '')
