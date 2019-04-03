@@ -366,13 +366,16 @@ def evalEmbCls(args):
 					res[jj,ii,kk] = f1_score(mlb.fit_transform(y_test), mlb.fit_transform(preds), average=average)
 	finally:
 		res_ave = np.nanmean(res, 0)
+		res_std = np.nanstd(res, 0)
 		print("F1 [micro macro]:")
 		print(res_ave)
 		if len(res_ave) >= 2:
 			finres = np.nanmean(res_ave, 0)
-			print("Average:", finres)
+			finstd = np.nanmean(res_std, 0)
+			print("Average:  {:.4F} ({:.4F}), {:.4F}".format(finres[0], finstd[0], finres[1]))
 		else:
 			finres = res_ave
+			finstd = res_std
 		if args.results and ii + jj >= 1:  # Output only non-empty results;  np.nansum(res_ave, 0) != 0
 			hbrief = np.uint16(0)
 			if args.accuracy_detailed:
@@ -394,7 +397,7 @@ def evalEmbCls(args):
 				# Output the Header if required
 				if not fres.tell():
 					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\tDVmin\t'
-						' F1mic\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
+						' F1mic\tF1miSD\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
 				# Embeddings file name and Dimensions number
 				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
@@ -406,7 +409,8 @@ def evalEmbCls(args):
 					print('{: <7}\t{: >3d}\t{: >3d}\t'.format(args.metric[:7], args.weighted_dims
 						, args.no_dissim), file=fres, end = '')
 				# F1 micro and macro (average value)
-				print('{:<.4F}\t {:<.4F}\t {:<.4F}\t '.format(args.dim_vmin, finres[0], finres[1]), file=fres, end = '')
+				print('{:<.4F}\t {:<.4F}\t{:<.4F}\t {:<.4F}\t '.format(
+					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end = '')
 				# Solver and execution time
 				print('{: >6}\t {: >8d}\t'.format((args.kernel if args.solver is None else args.solver)[:6]
 					, int(time.clock() - tstart)), file=fres, end = '')
@@ -417,7 +421,7 @@ def evalEmbCls(args):
 					ii += 1
 				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\t'.format(ii, jj, res.shape[1], res.shape[0]
 					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
-				print('{: >6}\n'.format(str(hbrief) if hbrief else '-'), file=fres, end = '')
+				print('{: >7}\n'.format(str(hbrief) if hbrief else '-'), file=fres, end = '')
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
