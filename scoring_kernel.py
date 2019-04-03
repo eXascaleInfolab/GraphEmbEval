@@ -123,6 +123,7 @@ def parseArgs(opts=None):
 						'. ATTENTION: has priority over the SVM kernel')
 	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
 						', rbf (accurate but slower), linear')
+	parser.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
@@ -288,10 +289,11 @@ def evalEmbCls(args):
 				# Classification strategy and similarity matrices
 				# clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True), 1)  # TopKRanker(LogisticRegression())
 				clf = None
+				clweight = 'balanced' if args.balance_classes else None
 				if args.solver is None:
-					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
+					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight=clweight, gamma='scale'))  # TopKRanker(LogisticRegression())
 				else:
-					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced', max_iter=512))
+					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight=clweight, max_iter=512))
 				if args.solver is None and args.kernel == 'precomputed':
 					# Note: metric here is distance metric = 1 - sim_metric
 					if OPTIMIZED:
@@ -397,8 +399,8 @@ def evalEmbCls(args):
 			with open(args.results, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Embeds          \t Dims\tWgh\tMetric \tNDs\tDVmin\t'
-						' F1mic\tF1miSD\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
+					fres.write('Embeds          \t Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t'
+						' F1mac\t Solver\tBCl\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
 				# Embeddings file name and Dimensions number
 				print('{: <16}\t {: >4}\t{: >3d}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1], args.weighted_dims), file=fres, end = '')
@@ -412,8 +414,9 @@ def evalEmbCls(args):
 				print('{:<.4F}\t {:<.4F}\t{:<.4F}\t {:<.4F}\t '.format(
 					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end = '')
 				# Solver and execution time
-				print('{: >6}\t {: >8d}\t'.format((args.kernel if args.solver is None else args.solver)[:6]
-					, int(time.clock() - tstart)), file=fres, end = '')
+				print('{: >6}\t{: >3}\t {: >8d}\t'.format(
+					(args.kernel if args.solver is None else args.solver)[:6]
+					, int(args.balance_classes), int(time.clock() - tstart)), file=fres, end = '')
 				# Folds and the timestamp
 				# Correct folds to show counts instead of indices
 				jj += 1
