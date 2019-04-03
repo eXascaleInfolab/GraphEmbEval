@@ -78,6 +78,8 @@ def sim_id(str sim):
 		raise ValueError('Unknown similrity value: ' + sim)
 
 
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
 def colindicesnz(mat not None):
 	"""Form iterable of column indices of the non-zero items per each row
 
@@ -91,7 +93,7 @@ def colindicesnz(mat not None):
 	assert len(mat.shape) == 2 and isspmatrix_coo(mat), 'A valid COO matrix is expected'
 	cdef:
 		list  res = [[] for _ in range(mat.shape[0])]
-		unsigned  i
+		unsigned  i, r
 
 	for i, r in enumerate(mat.row):
 		res[r].append(mat.col[i])

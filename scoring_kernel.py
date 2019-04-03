@@ -32,6 +32,7 @@ except ImportError:
 import numpy as np
 import os
 import sys
+import time
 
 # Enable optimized routines from the Cython lib
 OPTIMIZED = True  # True
@@ -91,7 +92,7 @@ class TopKRanker(OneVsRestClassifier):
 
 
 # Default values
-_trainperc_dfl = [0.1, 0.5, 0.9]  # [0.9]
+_trainperc_dfl = [0.3, 0.5, 0.7]  # [0.1, 0.5, 0.9]  # [0.9]
 
 
 def parseArgs(opts=None):
@@ -110,7 +111,7 @@ def parseArgs(opts=None):
 						help='Variable name of the adjacency matrix inside the network .mat file.')
 	parser.add_argument("--label-matrix-name", default='group',
 						help='Variable name of the labels matrix inside the network .mat file.')
-	parser.add_argument("-e", "--emb", metavar='EMBEDDING', required=True, help='Embeddings file in the .mat or .nvc format')
+	parser.add_argument("-e", "--embeddings", required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
@@ -124,7 +125,8 @@ def parseArgs(opts=None):
 	parser.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
 						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
-	parser.add_argument("-o", "--output", default='res.mat', help='Output file name for the resulting classifier.')
+	parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
+	parser.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
 	parser.add_argument("--num-shuffles", default=10, type=int, help='Number of shuffles of the embedding matrix.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
@@ -135,9 +137,14 @@ def parseArgs(opts=None):
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
 	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
 	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
-	if args.weighted_dims and args.solver is None and args.kernel != "precomputed":
+	if args.weighted_dims and args.kernel != "precomputed":
 		print('WARNING, dimension weights are omitted since they can be considered only for the "precomputed" kernel')
 		args.weighted_dims = False
+
+	if args.results is None:
+		args.results = os.path.splitext(os.path.split(args.embeddings)[1])[0] + '.res'
+		print('The aggregated evaluation results will be saved to: ', args.results)
+
 	return args
 
 
@@ -157,8 +164,8 @@ def evalEmbCls(args):
 	# print(features_matrix)
 	# exit(0)
 
-	# 0. Files
-	embeddings_file = args.emb
+	tstart = time.clock()
+	tstampt = time.gmtime()
 	rootdims = None  # Indices of the root dimensions
 	dimrds = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically >= 1
 	dimrws = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically <= 1
@@ -166,15 +173,15 @@ def evalEmbCls(args):
 	dimwdis = None  # Dimension weights for the dissimilarity
 
 	# 1. Load Embeddings
-	# model = KeyedVectors.load_word2vec_format(embeddings_file, binary=False)
+	# model = KeyedVectors.load_word2vec_format(args.embeddings, binary=False)
 	dimweighted = False
 	dis_features_matrix = None  # Dissimilarity features matrix
-	if args.emb.lower().endswith('.mat'):
-		mat = loadmat(embeddings_file)
+	if args.embeddings.lower().endswith('.mat'):
+		mat = loadmat(args.embeddings)
 		# Map nodes to their features
 		features_matrix = mat['embs']
-	elif args.emb.lower().endswith('.nvc'):
-		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.emb)
+	elif args.embeddings.lower().endswith('.nvc'):
+		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embeddings)
 		# Omit dissimilarity weighting if required
 		if args.no_dissim:
 			dimwdis = None
@@ -197,7 +204,7 @@ def evalEmbCls(args):
 		if dimweighted:
 			np.where(features_matrix > w0, features_matrix, 0)
 	else:
-		raise ValueError('Embeddings in the unknown format specified: ' + args.emb)
+		raise ValueError('Embeddings in the unknown format specified: ' + args.embeddings)
 
 	# Cut weights lower wdim_min if required
 	if args.wdim_min and not dimweighted:
@@ -237,6 +244,8 @@ def evalEmbCls(args):
 	Xdis = None
 	Xdis_train = None
 	res_ave = None  # Average results
+	ii = 0
+	jj = 0
 	try:
 		for ii, train_percent in enumerate(training_percents):
 			training_size = int(train_percent * features_matrix.shape[0])
@@ -263,16 +272,11 @@ def evalEmbCls(args):
 				if OPTIMIZED:
 					y_test = sm.colindicesnz(y[training_size:].tocoo())
 				else:
-					y_test_ = y[training_size:]
-					y_test = [[] for _ in range(y_test_.shape[0])]
-					for i in range(y_test_.shape[0]):
-						for j in range(y_test_.shape[1]):
-							if y_test_[i, j]:
-								y_test[i].append(j)
-					# cy = coo_matrix(y_test_)
-					# for i, j in zip(cy.row, cy.col):
-					# 	y_test[i].append(j)
-					y_test_ = None
+					cy = y[training_size:].tocoo()
+					y_test = [[] for _ in range(cy.shape[0])]
+					for i, j in zip(cy.row, cy.col):
+						y_test[i].append(j)
+					cy = None
 
 				# find out how many labels should be predicted
 				top_k_list = [len(l) for l in y_test]
@@ -284,13 +288,13 @@ def evalEmbCls(args):
 					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
 				else:
 					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced'))
-				if args.kernel == "precomputed":
+				if args.kernel == 'precomputed':
 					# Note: metric here is distance metric = 1 - sim_metric
 					if OPTIMIZED:
 						metid = sm.sim_id(args.metric)
 					else:
 						metric = args.metric
-						if metric == "jaccard":
+						if metric == 'jaccard':
 							metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
 							# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 					if dis_features_matrix is None:
@@ -310,7 +314,7 @@ def evalEmbCls(args):
 							sm.pairsimdis(gram, X_train, Xdis_train, metid)
 							sm.pairsimdis2(gram_test, X_test, X_train, Xdis_test, Xdis_train, metid)
 						else:
-							if metric == "cosine":
+							if metric == 'cosine':
 								metric = dist_cosine
 							if OPTIMIZED:
 								dis_metric = sm.dissim
@@ -344,11 +348,9 @@ def evalEmbCls(args):
 									gram_test[i, j] = ValT(1) - (metric(X_test[i], X_train[j]) + dis_metric(Xdis_test[i], Xdis_train[j])) / ValT(2)
 					clf.fit(gram, y_train_)
 					preds = clf.predict(gram_test, top_k_list)
-				else: #if args.solver in ('liblinear', 'lbfgs') or args.kernel in ('rbf', 'linear'):
+				else:
 					clf.fit(X_train, y_train_)
 					preds = clf.predict(X_test, top_k_list)
-				# else:
-				# 	raise ValueError('Unexpected kernel: ' + args.kernel)
 
 				# results = {}
 				#
@@ -364,7 +366,42 @@ def evalEmbCls(args):
 		print("F1 [micro macro]:")
 		print(res_ave)
 		if len(res_ave) >= 2:
-			print("Average:", np.nanmean(res_ave, 0))
+			finres = np.nanmean(res_ave, 0)
+			print("Average:", finres)
+		else:
+			finres = res_ave
+		if args.results:
+			if args.accuracy_detailed:
+				dname, fname = os.path.split(args.embeddings)
+				acrname = ''.join((dname, '/acr_', os.path.splitext(fname)[0], '.mat'))
+				print('The detailed accuracy results are saved to: ', acrname)
+				try:
+					savemat(acrname, mdict={'res': res})
+				except IOError as err:
+					print('WARNING, detailed accuracy results saving falied to {}: {}'
+						.format(acrname, err), file=sys.stderr)
+			with open(args.results, 'a') as fres:
+				# Output the Header if required
+				if not fres.tell():
+					fres.write('Embeds          \t Dims\t Metric \tWgh\t NDs\t'
+						' F1mic\t F1mac\t Solver\t ExecTime\t ItsDone\tItsTotal\t StartTime\n')
+				# Embeddings file name and Dimensions number
+				print('{: <16}\t {: >4}\t '.format(os.path.split(args.embeddings)[1]
+					, features_matrix.shape[1]), file=fres, end = '')
+				# Similarity Metric
+				if args.kernel != 'precomputed':
+					print('{: <7}\t{: >3}\t{: >3}\t '.format('-', '-', '-'), file=fres, end = '')
+				else:
+					print('{: <7}\t{: >3d}\t{: >3d}\t '.format(args.metric[:7], args.weighted_dims
+						, args.no_dissim), file=fres, end = '')
+				# F1 micro and macro (average value)
+				print('{:.4F}\t {:.4F}\t '.format(finres[0], finres[1]), file=fres, end = '')
+				# Solver and execution time
+				print('{: >6}\t {: >8d}\t '.format((args.kernel if args.solver is None else args.solver)[:6]
+					, int(time.clock() - tstart)), file=fres, end = '')
+				# Iterations counters and the timestamp
+				print('{: >5}.{:0>2}\t{: >6}.{:0>2}\t {}\n'.format(ii, jj, res.shape[1], res.shape[0]
+					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
@@ -381,7 +418,6 @@ def evalEmbCls(args):
 	#   print ('Average score:', dict(avg_score))
 	#   print ('-------------------')
 
-	savemat(args.output, mdict={'res': res})
 	#return res_ave
 
 
@@ -417,11 +453,11 @@ if __name__ == "__main__":
 				sio = io.StringIO()
 				ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
 				ps.print_stats(30)
-				if args and args.output:
+				if args and args.results:
 					# Trace profiling to the terminal
 					print(sio.getvalue(),file=sys.stderr)
 					# Output profiling to the file
-					profname = os.path.splitext(args.output)[0] + '.prof'
+					profname = os.path.splitext(args.results)[0] + '.prof'
 					with open(profname, 'a') as fout:
 						fout.write('$ ')
 						fout.write(' '.join(sys.argv))
