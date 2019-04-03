@@ -291,7 +291,7 @@ def evalEmbCls(args):
 					clf = TopKRanker(SVC(kernel=args.kernel, cache_size=4096, probability=True, class_weight='balanced', gamma='scale'))  # TopKRanker(LogisticRegression())
 				else:
 					clf = TopKRanker(LogisticRegression(solver=args.solver, class_weight='balanced', max_iter=512))
-				if args.kernel == 'precomputed':
+				if args.solver is None and args.kernel == 'precomputed':
 					# Note: metric here is distance metric = 1 - sim_metric
 					if OPTIMIZED:
 						metid = sm.sim_id(args.metric)
@@ -402,12 +402,11 @@ def evalEmbCls(args):
 				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
 				# Similarity Metric, weighting, no-dissim and dim-val-min
-				if args.kernel != 'precomputed':
-					print('{: <7}\t{: >3}\t{: >3}\t'.format('-', '-', '-')
-						, file=fres, end = '')
+				if args.solver is None and args.kernel == 'precomputed':
+					print('{: <7}\t{: >3d}\t{: >3d}\t'.format(args.metric[:7]
+						, args.weighted_dims, args.no_dissim), file=fres, end = '')
 				else:
-					print('{: <7}\t{: >3d}\t{: >3d}\t'.format(args.metric[:7], args.weighted_dims
-						, args.no_dissim), file=fres, end = '')
+					print('{: <7}\t{: >3}\t{: >3}\t'.format('-', '-', '-'), file=fres, end = '')
 				# F1 micro and macro (average value)
 				print('{:<.4F}\t {:<.4F}\t{:<.4F}\t {:<.4F}\t '.format(
 					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end = '')
