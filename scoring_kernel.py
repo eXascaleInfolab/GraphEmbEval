@@ -23,6 +23,8 @@ from sklearn.metrics import f1_score
 from sklearn.utils import shuffle as skshuffle
 from sklearn.preprocessing import MultiLabelBinarizer
 
+from hashlib import md5
+
 try:
 	# External package: pip install future
 	from future.utils import viewitems  #pylint: disable=W0611
@@ -372,9 +374,16 @@ def evalEmbCls(args):
 		else:
 			finres = res_ave
 		if args.results and ii + jj >= 1:  # Output only non-empty results;  np.nansum(res_ave, 0) != 0
+			hbrief = np.uint16(0)
 			if args.accuracy_detailed:
+				# Evaluate 2-byte hash of the input args
+				hf = md5()
+				hf.update(' '.join(sys.argv).encode())
+				for i, b in enumerate(hf.digest()):
+					hbrief = hbrief ^ b << (8 if i%2 else 0)
+				# Output detailed accuracy results
 				dname, fname = os.path.split(args.embeddings)
-				acrname = ''.join((dname, '/acr_', os.path.splitext(fname)[0], '.mat'))
+				acrname = ''.join((dname, '/acr_', os.path.splitext(fname)[0], '_', str(hbrief), '.mat'))
 				print('The detailed accuracy results are saved to: ', acrname)
 				try:
 					savemat(acrname, mdict={'res': res})
@@ -385,7 +394,7 @@ def evalEmbCls(args):
 				# Output the Header if required
 				if not fres.tell():
 					fres.write('Embeds          \t Dims\tMetric \tWgh\tNDs\tDVmin\t'
-						' F1mic\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime\n')
+						' F1mic\t F1mac\t Solver\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
 				# Embeddings file name and Dimensions number
 				print('{: <16}\t {: >4}\t'.format(os.path.split(args.embeddings)[1]
 					, features_matrix.shape[1]), file=fres, end = '')
@@ -406,8 +415,9 @@ def evalEmbCls(args):
 				jj += 1
 				if jj == args.num_shuffles:
 					ii += 1
-				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\n'.format(ii, jj, res.shape[1], res.shape[0]
+				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\t'.format(ii, jj, res.shape[1], res.shape[0]
 					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
+				print('{: >6}\n'.format(str(hbrief) if hbrief else '-'), file=fres, end = '')
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
