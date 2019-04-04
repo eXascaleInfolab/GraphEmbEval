@@ -187,6 +187,8 @@ def loadNvc(nvcfile):
 					# Omit the cluster or node id prefix of each row
 					ln = ln.split('>', 1)[1]
 				vals = ln.split()
+				if not vals:
+					continue
 				if compr == COMPR_CLUSTER:
 					if valfmt == VAL_BIT:
 						for nd in vals:
