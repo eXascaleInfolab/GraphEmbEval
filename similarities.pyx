@@ -132,7 +132,12 @@ cdef ValT c_sim_cosine(ValArrayT a, ValArrayT b) nogil:
 		smul += va * vb
 		moda += va * va
 		modb += vb * vb
-	return 1 if moda == 0 and modb == 0 else smul / (c_sqrt(moda) * c_sqrt(modb))
+
+	if moda != 0 and modb != 0:
+		smul /= c_sqrt(moda * modb)
+	else:
+		smul = 1 if moda == modb else 0
+	return smul
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
