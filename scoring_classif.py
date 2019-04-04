@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 :Description: Graph (network) embedding evaluation script using multi-label classification.
-:Authors: Bryan Perozzi, Dingqi Yang, Artem Lutov <luart@ya.ru>
+	Based on the DeepWalk scoring.py script of Bryan Perozzi:
+	https://github.com/phanein/deepwalk/tree/master/example_graphs
+:Authors: Artem Lutov <luart@ya.ru>, Bryan Perozzi, Dingqi Yang
 :Organizations: eXascale lab <http://exascale.info/>, Lumais <http://www.lumais.com/>
 :Date: 2019-03
 """
 from __future__ import print_function, division  # Required for stderr output, must be the first import
-from parser_nvc import loadNvc  #pylint: disable=E0611,E0401
+from utils.parser_nvc import loadNvc  #pylint: disable=E0611,E0401
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 # from collections import defaultdict
 # from gensim.models import Word2Vec, KeyedVectors
