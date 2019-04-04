@@ -7,18 +7,19 @@
 :Date: 2019-02
 """
 from __future__ import print_function, division  # Required for stderr output, must be the first import
+from scipy.io import loadmat
 import os  # Pathes processing
 import argparse
 import sys
-from scipy.io import loadmat
 
 
-def matToNsl(mnet, dirnet=None):
+def matToNsl(mnet, dirnet=None, backup=True):
 	"""Convert unsigned input network in the Mathlab .mat format to .nsl
 
 	mnet: str  - unsigned input network in the mathlab format
-	dirnet: boolean  - the input network can be directed (adjacency matrix can be asymmetric)
+	dirnet: bool  - the input network can be directed (adjacency matrix can be asymmetric)
 		and directed output network should be produced (.nsa format instead of .nse)
+	backup: bool  - backup the existing output file
 	"""
 	print('Converting {}directed network {}...'.format('' if dirnet else 'un', mnet))
 	matnet = loadmat(mnet)
@@ -33,7 +34,7 @@ def matToNsl(mnet, dirnet=None):
 	netname = os.path.splitext(mnet)[0]
 	netext = '.nsa' if dirnet else '.nse'
 	onet = netname + netext
-	if os.path.isfile(onet):
+	if backup and os.path.isfile(onet):
 		onetbk = onet + '.bck'
 		try:
 			os.rename(onet, onetbk)
@@ -60,13 +61,17 @@ def matToNsl(mnet, dirnet=None):
 	# #  weight  - weight in case the network is weighted, non-negative floating point number
 	links = 0  # The number of links
 	wnodes = 0  # The number of weighted nodes (diagonal values != 0)
+	procAsDir = False  # Force the network processing as directed
 	with open(onet, 'w') as fout:
 		assert dirnet or nc.col.size % 2 == 0, 'Even number of arcs is expected for the {} format: {}'.format(
 			netext, nc.col.size)
-		fout.write('# Nodes: {}\t{}: {}\tWeighted: {}\n'.format(nc.shape[0], 'Arcs' if dirnet else 'Edges',
-			nc.col.size if dirnet else int(nc.col.size / 2), int(nc.data is not None)))
+		# Note: use ' Arcs' to have the same number of symbols as in the 'Edges';
+		# weighted nodes may increase the number of links not more than by one digit (=> the space is reserved)
+		hdr = '# Nodes: {}\t{}: {} \tWeighted: {}\n'.format(nc.shape[0], ' Arcs' if dirnet else 'Edges',
+			nc.col.size if dirnet else int(nc.col.size / 2), int(nc.data is not None))
+		fout.write(hdr)
 		# Write the body
-		sys.stdout.write('  Weighted nodes: ')
+		sys.stdout.write('  Weighted nodes: ')  # print('  Weighted nodes: ', end='')
 		if nc.data is None:
 			for i in range(nc.col.size):
 				if dirnet or nc.col[i] <= nc.row[i]:
@@ -88,23 +93,20 @@ def matToNsl(mnet, dirnet=None):
 			if links - wnodes != (nc.col.size - wnodes) / 2:
 				print('  WARNING, {} edges formed of the {} expected ({} / {} without the weighted nodes)'
 					.format(links, int(nc.col.size / 2), links - wnodes, int((nc.col.size - wnodes) / 2)))
-	# Update the header considering weighted nodes if required
-	if not dirnet and wnodes:
+
+		# Update the header considering weighted nodes if required
 		if links - wnodes == (nc.col.size - wnodes) / 2:
 			print('  Correcting the header')
-			onetupd = onet + '.upd'
-			with open(onet, 'r') as finp:
-				with open(onetupd, 'w') as fout:
-					finp.next()
-					fout.write('# Nodes: {}\tEdges: {}\tWeighted: {}\n'.format(nc.shape[0],
-						links, int(nc.data is not None)))
-					for ln in finp:
-						fout.write(ln)
-			os.remove(onet)  # Note: it is required in Windows to perform rename gracefully
-			os.rename(onetupd, onet)
+			fout.seek(0)
+			hdrupd = '# Nodes: {}\tEdges: {}\tWeighted: {}'.format(nc.shape[0],
+						links, int(nc.data is not None))
+			assert len(hdrupd) + 1 <= len(hdr), 'Invalid header length'
+			fout.write(''.join((hdrupd, ' ' * (len(hdr) - len(hdrupd) - 1) , '\n')))
 		else:
+			procAsDir = True
+	if procAsDir:
 			print('  WARNING, the imput network has asymmetric adjacency martix and will be processed as directed')
-			matToNsl(mnet, dirnet=True)
+			matToNsl(mnet, dirnet=True, backup=False)
 	print('  converted to', onet)
 
 

@@ -121,10 +121,10 @@ def parseArgs(opts=None):
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear, lbfgs (parallel, less accurate)'
+	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel)'
 						'. ATTENTION: has priority over the SVM kernel')
-	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fastest but requires gram/similarity matrix)'
-						', rbf (accurate but slower), linear')
+	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix)'
+						', rbf (accurate but slower), linear (less accurate)')
 	parser.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("--all", default=False, action='store_true',
@@ -401,32 +401,33 @@ def evalEmbCls(args):
 			with open(args.results, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Embeds          \t Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t'
-						' F1mac\t Solver\tBCl\t ExecTime\t   Folds\t StartTime        \tInpHash\n')
+					fres.write('Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t F1mac\t Solver'
+						'\tBCl\t ExecTime\t   Folds\t StartTime        \tInpHash\tEmbeds\n')
 				# Embeddings file name and Dimensions number
-				print('{: <16}\t {: >4}\t{: >3d}\t'.format(os.path.split(args.embeddings)[1]
-					, features_matrix.shape[1], args.weighted_dims), file=fres, end = '')
+				print('{: >4}\t{: >3d}\t'.format(features_matrix.shape[1], args.weighted_dims)
+					, file=fres, end='')
 				# Similarity Metric, weighting, no-dissim and dim-val-min
 				if args.solver is None and args.kernel == 'precomputed':
 					print('{: <7}\t{: >3d}\t'.format(args.metric[:7]
-						, args.no_dissim), file=fres, end = '')
+						, args.no_dissim), file=fres, end='')
 				else:
-					print('{: <7}\t{: >3}\t'.format('-', '-'), file=fres, end = '')
+					print('{: <7}\t{: >3}\t'.format('-', '-'), file=fres, end='')
 				# F1 micro and macro (average value)
 				print('{:<.4F}\t {:<.4F}\t{:<.4F}\t {:<.4F}\t '.format(
-					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end = '')
+					args.dim_vmin, finres[0], finstd[0], finres[1]), file=fres, end='')
 				# Solver and execution time
 				print('{: >6}\t{: >3}\t {: >8d}\t'.format(
 					(args.kernel if args.solver is None else args.solver)[:6]
-					, int(args.balance_classes), int(time.clock() - tstart)), file=fres, end = '')
+					, int(args.balance_classes), int(time.clock() - tstart)), file=fres, end='')
 				# Folds and the timestamp
 				# Correct folds to show counts instead of indices
 				jj += 1
 				if jj == args.num_shuffles:
 					ii += 1
 				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\t'.format(ii, jj, res.shape[1], res.shape[0]
-					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end = '')
-				print('{: >7}\n'.format(str(hbrief) if hbrief else '-'), file=fres, end = '')
+					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end='')
+				print('{: >7}\t{}\n'.format(str(hbrief) if hbrief else '-'
+					, os.path.split(args.embeddings)[1]), file=fres, end='')
 
 	# print ('Results, using embeddings of dimensionality', X.shape[1])
 	# print ('-------------------')
