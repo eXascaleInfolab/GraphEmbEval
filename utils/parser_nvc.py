@@ -129,6 +129,7 @@ def loadNvc(nvcfile):
 					elif not ftr:
 						# Parse the footer
 						# [Diminfo> <cl0_id>[#<cl0_levid>][%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!] ...
+						# A possible value: 482716#2%1.16899/9.1268E-05:0.793701-0.114708
 						vals = ln[1:].split(None, 1)
 						if not vals or vals[0].lower() != 'diminfo>':
 							continue
@@ -142,22 +143,25 @@ def loadNvc(nvcfile):
 
 						# [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!]
 						parts = []  # Parsing parts
-						pos = vals[0].find('%') + 1
-						if dimnum and pos != 0:
-							dimrds = np.empty(dimnum, np.float32)
-							parts.append(('%', dimrds))
-						pos = vals[0].find('/', pos) + 1
-						if dimnum and pos != 0:
-							dimrws = np.empty(dimnum, np.float32)
-							parts.append(('/', dimrws))
-						pos = vals[0].find(':', pos) + 1
-						if dimnum and pos != 0:
-							dimwsim = np.empty(dimnum, np.float32)
-							parts.append((':', dimwsim))
-						pos = vals[0].find('-', pos) + 1
-						if dimnum and pos != 0:
-							dimwdis = np.empty(dimnum, np.float32)
-							parts.append(('-', dimwdis))
+						if dimnum:
+							pos = vals[0].find('%') + 1
+							if pos != 0:
+								dimrds = np.empty(dimnum, np.float32)
+								parts.append(('%', dimrds))
+							pos2 = vals[0].find('/', pos) + 1
+							if pos2 != 0:
+								pos = pos2
+								dimrws = np.empty(dimnum, np.float32)
+								parts.append(('/', dimrws))
+							pos2 = vals[0].find(':', pos) + 1
+							if pos2 != 0:
+								pos = pos2
+								dimwsim = np.empty(dimnum, np.float32)
+								parts.append((':', dimwsim))
+							pos = vals[0].find('-', pos) + 1
+							if pos != 0:
+								dimwdis = np.empty(dimnum, np.float32)
+								parts.append(('-', dimwdis))
 
 						if dimrds is None and dimrws is None and dimwsim is None and dimwdis is None and rootdims is None:
 							continue
@@ -169,9 +173,11 @@ def loadNvc(nvcfile):
 								ird += 1
 								v = v[:-1]
 							# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]]
+							ibeg = v.find(parts[0][0])
 							for ipt, pt in enumerate(parts):
-								ibeg = v.find(pt[0]) + 1
-								pt[1][iv] = v[ibeg : None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg)]
+								iend = None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg + 1)
+								pt[1][iv] = v[ibeg + 1 : iend]
+								ibeg = iend
 						assert rootdims is None or ird == len(rootdims), 'Rootdims formation validation failed'
 					continue
 
