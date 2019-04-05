@@ -109,9 +109,10 @@ def parseArgs(opts=None):
 	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
-	subparsers = parser.add_subparsers(help='Embedding processing modes')
+	subparsers = parser.add_subparsers(title='Embeddings processing modes', dest='mode') #, description='Modes of the input embeddings processing')
+									   # , help='Embedding processing modes')
 	evaluator = subparsers.add_parser('eval', help='Evaluate embeddings')
-	gram = subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
+	subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
 	# mode = parser.add_mutually_exclusive_group(required=True)
 	# mode.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
 	# # mode.add_argument("-g", "--network", default=None,
@@ -164,9 +165,9 @@ def parseArgs(opts=None):
 
 	if args.results is None:
 		fname = os.path.splitext(os.path.split(args.embeddings)[1])[0]
-		if args.network is None:
+		if args.network is None:  # Mode gram
 			fname = fname.join(('gram_', '.mat'))
-		else:
+		else:  # Mode eval
 			fname += '.res'
 		args.results = fname
 		print('The results will be saved to: ', args.results)
