@@ -179,12 +179,26 @@ def parseArgs(opts=None):
 
 def dist_jaccard(u, v):
 	"""Weighted Jaccard distance metric"""
-	return ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+	# Evalaute denominator
+	res = np.maximum(u, v).sum()
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: pow(0.5, arrsize)
+	if res != 0:
+		res = np.minimum(u, v).sum() / res
+	else:
+		res = pow(0.5, u.size)
+	return 1 - res
 
 
 def dis_metric(u, v):
 	"""Jaccard-like dissimilarity metric"""
-	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+	# Evalaute denominator
+	res = np.maximum(u, v).sum()
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: pow(0.5, arrsize); dissim ~= 1 - sim
+	if res != 0:
+		res = np.absolute(u - v).sum() / res
+	else:
+		res = 1 - pow(0.5, u.size)
+	return res
 
 
 def pairsimdis(features, dis_features, metric, dis_metric):
