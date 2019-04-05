@@ -182,10 +182,11 @@ def dist_jaccard(u, v):
 	# Evalaute denominator
 	res = np.maximum(u, v).sum()
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: pow(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if res != 0:
 		res = np.minimum(u, v).sum() / res
 	else:
-		res = pow(0.5, u.size)
+		res = pow(0.25, u.size)
 	return 1 - res
 
 
@@ -194,10 +195,11 @@ def dis_metric(u, v):
 	# Evalaute denominator
 	res = np.maximum(u, v).sum()
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: pow(0.5, arrsize); dissim ~= 1 - sim
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if res != 0:
 		res = np.absolute(u - v).sum() / res
 	else:
-		res = 1 - pow(0.5, u.size)
+		res = 1 - pow(0.25, u.size)
 	return res
 
 

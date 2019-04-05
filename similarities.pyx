@@ -138,7 +138,8 @@ cdef ValT c_sim_cosine(ValArrayT a, ValArrayT b) nogil:
 		smul /= c_sqrt(moda * modb)
 	else:
 		# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0
-		smul = 0 if moda != modb else powf(0.5, arrsize)
+		# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
+		smul = 0 if moda != modb else powf(0.25, arrsize)
 	return smul
 
 
@@ -192,10 +193,11 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 		nom += fminf(va, vb)
 		den += fmaxf(va, vb)
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if den != 0:
 		nom /= den
 	else:
-		nom = powf(0.5, arrsize)
+		nom = powf(0.25, arrsize)
 	return nom
 
 
@@ -249,10 +251,11 @@ cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 		nom += <bint>(va and vb)
 		den += <bint>(va or vb)
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if den != 0:
 		va = <ValT>nom / den
 	else:
-		va = powf(0.5, arrsize)
+		va = powf(0.25, arrsize)
 	return va
 
 
@@ -306,10 +309,11 @@ cdef ValT c_dissim(ValArrayT a, ValArrayT b) nogil:
 		nom += fabsf(va - vb)
 		den += fmaxf(va, vb)
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if den != 0:
 		nom /= den
 	else:
-		nom = powf(0.5, arrsize)
+		nom = powf(0.25, arrsize)
 	return nom
 
 
