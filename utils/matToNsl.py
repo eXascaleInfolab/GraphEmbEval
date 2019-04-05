@@ -22,13 +22,25 @@ def matToNsl(mnet, dirnet=None, outdir=None, backup=True):
 	outdir: str  - output directory. Default: directory of the mnet file
 	backup: bool  - backup the existing output file
 	"""
-	print('Converting {}directed network {}...'.format('' if dirnet else 'un', mnet))
+	print('Converting the {}directed network {}...'.format('' if dirnet else 'un', mnet))
 	matnet = loadmat(mnet)
 	nc = matnet['network'].tocoo()  # Fetch the network data and convert to the COOrdinate format
 	assert nc.col.size == nc.row.size and nc.shape[0] == nc.shape[1], (
 		'The adjacency matrix is expected to be square')
-	# Omit weight in the unweighted matrix
-	if nc.data.size == nc.data.sum():
+	# Omit weight in the unweighted matrix considering that selgweight might be counted twice for the directed networks
+	wnds = 0  # The number of self links (weighed nodes, diagonal values != 0)
+	wndsWeight = 0.  # Weight of the weighted nodes
+	totWeight = 0.
+	sys.stdout.write('  Weighted nodes: ')  # print('  Weighted nodes: ', end='')
+	for i, j, w in zip(nc.row, nc.col, nc.data):
+		totWeight += w
+		if i == j:
+			wnds += 1
+			wndsWeight += w
+	print(' {{{}}}'.format(wnds))
+	# dsum = nc.data.sum()
+	if totWeight == nc.data.size or (wnds * 2 == wndsWeight
+	and totWeight == nc.data.size + wnds):
 		nc.data = None
 
 	# Create the destination file backing up the existing one if any
@@ -62,56 +74,30 @@ def matToNsl(mnet, dirnet=None, outdir=None, backup=True):
 	# #  src_id  - source node id >= 0
 	# #  dst_id  - destination node id >= 0
 	# #  weight  - weight in case the network is weighted, non-negative floating point number
-	links = 0  # The number of links
-	wnodes = 0  # The number of weighted nodes (diagonal values != 0)
-	procAsDir = False  # Force the network processing as directed
+	dirnet = dirnet or bool((nc.col.size - wnds) % 2)  # Force the network processing as directed
+	if nc.col.size % 2:
+		print('WARNING, an undirected network without selflinks is expected.'
+			' Arcs: {} / {} ({} selfarcs). The network is {}directed.'
+			.format(nc.col.size - wnds, nc.col.size, wnds, '' if dirnet else 'un'))
+	else:
+		assert (nc.col.size - wnds) % 2 == 0, 'The number of arcs in undirected network should be even'
 	with open(onet, 'w') as fout:
-		if nc.col.size % 2:
-			print('WARNING, an undirected network without selflinks is expected'
-				', which should have an even number of arcs: {}. Checking for the selflinks...'.format(nc.col.size))
 		# Note: use ' Arcs' to have the same number of symbols as in the 'Edges';
 		# weighted nodes may increase the number of links not more than by one digit (=> the space is reserved)
 		hdr = '# Nodes: {}\t{}: {} \tWeighted: {}\n'.format(nc.shape[0], ' Arcs' if dirnet else 'Edges',
-			nc.col.size if dirnet else int(nc.col.size / 2), int(nc.data is not None))
+			nc.col.size if dirnet else (nc.col.size - wnds) // 2 + wnds, int(nc.data is not None))
 		fout.write(hdr)
 		# Write the body
-		sys.stdout.write('  Weighted nodes: ')  # print('  Weighted nodes: ', end='')
+		# Note: the network initially specified in the Compresed Sparse Column format (indexed by columns)
 		if nc.data is None:
-			for i in range(nc.col.size):
-				if dirnet or nc.col[i] <= nc.row[i]:
-					fout.write('{} {}\n'.format(nc.col[i], nc.row[i]))
-					links += 1
-					if nc.col[i] == nc.row[i]:
-						wnodes += 1
-						# sys.stdout.write(' ' + str(nc.col[i]))
+			for i, j in zip(nc.col, nc.row):
+				if dirnet or i <= j:
+					fout.write('{} {}\n'.format(i, j))
 		else:
-			for i in range(nc.col.size):
-				if dirnet or nc.col[i] <= nc.row[i]:
-					fout.write('{} {} {}\n'.format(nc.col[i], nc.row[i], nc.data[i]))
-					links += 1
-					if nc.col[i] == nc.row[i]:
-						wnodes += 1
-						# sys.stdout.write(' ' + str(nc.col[i]))
-		print(' {{{}}}'.format(wnodes))
-		if not dirnet and links != nc.col.size / 2:
-			if links - wnodes != (nc.col.size - wnodes) / 2:
-				print('  WARNING, {} edges formed of the {} expected ({} / {} without the weighted nodes)'
-					.format(links, int(nc.col.size / 2), links - wnodes, int((nc.col.size - wnodes) / 2)))
-
-		# Update the header considering weighted nodes if required
-		if links - wnodes == (nc.col.size - wnodes) / 2:
-			print('  Correcting the header')
-			fout.seek(0)
-			hdrupd = '# Nodes: {}\tEdges: {}\tWeighted: {}'.format(nc.shape[0],
-						links, int(nc.data is not None))
-			assert len(hdrupd) + 1 <= len(hdr), 'Invalid header length'
-			fout.write(''.join((hdrupd, ' ' * (len(hdr) - len(hdrupd) - 1) , '\n')))
-		else:
-			procAsDir = True
-	if procAsDir:
-			print('  WARNING, the imput network has asymmetric adjacency martix and will be processed as directed')
-			matToNsl(mnet, dirnet=True, outdir=outdir, backup=False)
-	print('  converted to', onet)
+			for i, j, w in zip(nc.col, nc.row, nc.data):
+				if dirnet or i <= j:
+					fout.write('{} {} {}\n'.format(i, j, w))
+	print('  Converted to:', onet)
 
 
 def parseArgs(params=None):
