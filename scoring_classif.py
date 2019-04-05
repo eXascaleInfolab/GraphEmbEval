@@ -127,7 +127,8 @@ def parseArgs(opts=None):
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
-	parser.add_argument("-r", "--results", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
+	parser.add_argument("-o", "--output", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
+	parser.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
@@ -156,21 +157,22 @@ def parseArgs(opts=None):
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
 	assert args.num_shuffles >= 1, 'num_shuffles is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
-	assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
-	assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
-	if args.weighted_dims and not args.no_dissim and args.kernel != "precomputed":
+	if args.weighted_dims and not args.no_dissim and (args.mode != 'eval' or args.kernel != "precomputed"):
 		print('WARNING, dimension no_dissim is automatically set since the dissimilarity weighting'
 			' can be considered only for the "precomputed" kernel')
 		args.no_dissim = True
+	if args.mode == 'eval':
+		assert args.solver is None or args.solver in ('liblinear', 'lbfgs'), 'Unexpexted solver'
+		assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
 
-	if args.results is None:
+	if args.output is None:
 		fname = os.path.splitext(os.path.split(args.embeddings)[1])[0]
-		if args.network is None:  # Mode gram
+		if args.mode == 'gram':  # Mode gram
 			fname = fname.join(('gram_', '.mat'))
 		else:  # Mode eval
 			fname += '.res'
-		args.results = fname
-		print('The results will be saved to: ', args.results)
+		args.output = fname
+		print('The output results will be saved to: ', args.output)
 
 	return args
 
@@ -449,7 +451,7 @@ def evalEmbCls(args):
 		else:
 			finres = res_ave
 			finstd = res_std
-		if args.results and ii + jj >= 1:  # Output only non-empty results;  np.nansum(res_ave, 0) != 0
+		if args.output and ii + jj >= 1:  # Output only non-empty results;  np.nansum(res_ave, 0) != 0
 			hbrief = np.uint16(0)
 			if args.accuracy_detailed:
 				# Evaluate 2-byte hash of the input args
@@ -466,7 +468,7 @@ def evalEmbCls(args):
 				except IOError as err:
 					print('WARNING, detailed accuracy results saving falied to {}: {}'
 						.format(acrname, err), file=sys.stderr)
-			with open(args.results, 'a') as fres:
+			with open(args.output, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
 					fres.write('Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t F1mac\t Solver'
@@ -547,11 +549,11 @@ if __name__ == "__main__":
 				sio = io.StringIO()
 				ps = pstats.Stats(pr, stream=sio).sort_stats(sk_cumulative, sk_time)
 				ps.print_stats(30)
-				if args and args.results:
+				if args and args.output:
 					# Trace profiling to the terminal
 					print(sio.getvalue(),file=sys.stderr)
 					# Output profiling to the file
-					profname = os.path.splitext(args.results)[0] + '.prof'
+					profname = os.path.splitext(args.output)[0] + '.prof'
 					with open(profname, 'a') as fout:
 						fout.write('$ ')
 						fout.write(' '.join(sys.argv))
