@@ -256,7 +256,8 @@ def loadNvc(nvcfile):
 		raise
 
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
-	assert len(dimwsim) == len(dimwdis), 'Parsed dimension weights are not synchronized'
+	assert dimwsim is None or dimwdis is None or len(dimwsim) == len(dimwdis
+		), 'Parsed dimension weights are not synchronized'
 
 	# Omit empty dimensions
 	if dimnum != irow:
