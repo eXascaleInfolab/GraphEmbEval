@@ -17,6 +17,7 @@ cdef extern from 'math.h':
 	float fminf(float x, float y) nogil
 	float fmaxf(float x, float y) nogil
 	float fabsf(float x) nogil
+	float powf(float base, float exp) nogil
 from libc.math cimport sqrt as c_sqrt  #, fminf, fmaxf, fabsf
 # from libc.math cimport fminf, fmaxf, fabsf
 # cdef extern from "math.h":
@@ -136,7 +137,8 @@ cdef ValT c_sim_cosine(ValArrayT a, ValArrayT b) nogil:
 	if moda != 0 and modb != 0:
 		smul /= c_sqrt(moda * modb)
 	else:
-		smul = 1 if moda == modb else 0
+		# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0
+		smul = 0 if moda != modb else powf(0.5, arrsize)
 	return smul
 
 
@@ -189,7 +191,12 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 		vb = b[i]
 		nom += fminf(va, vb)
 		den += fmaxf(va, vb)
-	return 1 if den == 0 else nom / den
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	if den != 0:
+		nom /= den
+	else:
+		nom = powf(0.5, arrsize)
+	return nom
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -241,7 +248,12 @@ cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 		vb = b[i]
 		nom += <bint>(va and vb)
 		den += <bint>(va or vb)
-	return 1 if den == 0 else <ValT>nom / den
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	if den != 0:
+		va = <ValT>nom / den
+	else:
+		va = powf(0.5, arrsize)
+	return va
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -293,7 +305,12 @@ cdef ValT c_dissim(ValArrayT a, ValArrayT b) nogil:
 		vb = b[i]
 		nom += fabsf(va - vb)
 		den += fmaxf(va, vb)
-	return 1 if den == 0 else nom / den
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	if den != 0:
+		nom /= den
+	else:
+		nom = powf(0.5, arrsize)
+	return nom
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
