@@ -109,33 +109,47 @@ def parseArgs(opts=None):
 	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
-	parser.add_argument("-g", "--network", required=True,
-						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
-	parser.add_argument("--adj-matrix-name", default='network',
-						help='Variable name of the adjacency matrix inside the network .mat file.')
-	parser.add_argument("--label-matrix-name", default='group',
-						help='Variable name of the labels matrix inside the network .mat file.')
+	subparsers = parser.add_subparsers(help='Embedding processing modes')
+	evaluator = subparsers.add_parser('eval', help='Evaluate embeddings')
+	gram = subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
+	# mode = parser.add_mutually_exclusive_group(required=True)
+	# mode.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
+	# # mode.add_argument("-g", "--network", default=None,
+	# # 					help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
+	# mode.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embeddings'
+	# 					' instead of the embeddings evaluation.')
+
 	parser.add_argument("-e", "--embeddings", required=True, help='Embeddings file in the .mat or .nvc format')
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
-	parser.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel)'
-						'. ATTENTION: has priority over the SVM kernel')
-	parser.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix)'
-						', rbf (accurate but slower), linear (less accurate)')
-	parser.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
-	parser.add_argument("--all", default=False, action='store_true',
-						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
-						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
-	parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
-	parser.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
-	parser.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
+	parser.add_argument("-r", "--results", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
+
+	evaluator.add_argument("-g", "--network", required=True,
+						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
+	evaluator.add_argument("--adj-matrix-name", default='network',
+						help='Variable name of the adjacency matrix inside the network .mat file.')
+	evaluator.add_argument("--label-matrix-name", default='group',
+						help='Variable name of the labels matrix inside the network .mat file.')
+	evaluator.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel)'
+						'. ATTENTION: has priority over the SVM kernel')
+	evaluator.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix)'
+						', rbf (accurate but slower), linear (less accurate)')
+	evaluator.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
+	evaluator.add_argument("--all", default=False, action='store_true',
+						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
+						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
+	evaluator.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
+	# parser.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embeddings'
+	# 					' instead of the embeddings evaluation.')
+	# parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
+	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
 
 	args = parser.parse_args(opts)
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
@@ -149,10 +163,54 @@ def parseArgs(opts=None):
 		args.no_dissim = True
 
 	if args.results is None:
-		args.results = os.path.splitext(os.path.split(args.embeddings)[1])[0] + '.res'
-		print('The aggregated evaluation results will be saved to: ', args.results)
+		fname = os.path.splitext(os.path.split(args.embeddings)[1])[0]
+		if args.network is None:
+			fname = fname.join(('gram_', '.mat'))
+		else:
+			fname += '.res'
+		args.results = fname
+		print('The results will be saved to: ', args.results)
 
 	return args
+
+
+def dist_jaccard(u, v):
+	"""Weighted Jaccard distance metric"""
+	return ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+
+
+def dis_metric(u, v):
+	"""Jaccard-like dissimilarity metric"""
+	return np.absolute(u - v).sum() / np.maximum(u, v).sum()
+
+
+def pairsimdis(features, dis_features, metric, dis_metric):
+	"""Evaluate pairwise similarity (Gram) matrix
+
+	features  - features matrix (node embedding vectors)
+	dis_features  - features matirx weighted for the dissimilarity
+	metric: callable  - applied similarity metric (cosine, jaccard)
+	dis_metric: callable  - applied dissimilarity metric
+
+	return  pairwise similarity (Gram) matrix
+	"""
+	assert features.shape == dis_features.shape, 'Feature matrices shapes are not synced'
+	size = features.shape[0]
+	sims = np.empty(features.shape[0] * (size - 1) // 2, dtype=ValT)
+	icur = 0
+	for i in range(size - 1):
+		for j in range(i + 1, size):
+			#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
+			# Note: positive gram matrix yields abit more accurate resutls
+			# print('> x[i].T.shape: {} ({}, T: {}), asarr(x[i]).shape: {} ({}), ravel(x[i]).shape: {} ({})'
+			# 	.format(X_train[i].T.shape, hex(id(X_train[i])), hex(id(X_train[i].T))
+			# 	, np.asarray(X_train[i]).shape, hex(id(np.asarray(X_train[i])))
+			# 	, np.ravel(X_train[i]).shape, hex(id(np.ravel(X_train[i]))) ))
+			sims[icur] = ValT(1) - (metric(features[i], features[j])
+				+ dis_metric(dis_features[i], dis_features[j])) / ValT(2)
+			icur += 1
+	assert icur == len(sims), 'sims size validation failed'
+	return squareform(sims)
 
 
 def evalEmbCls(args):
@@ -161,15 +219,6 @@ def evalEmbCls(args):
 	args  - parsed arguments
 	"""
 	assert args, 'Valid args are expected'
-
-	# features_matrix, dimwsim = loadNvc('test_cluster_compr.nvc')
-	# print('nvec:\n', features_matrix, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
-	# if dimwsim is not None:
-	# 	print('Node vectors are corrected with the dimension weights')
-	# 	for (i, j), v in features_matrix.items():
-	# 		features_matrix[i, j] = v * dimwsim[j]
-	# print(features_matrix)
-	# exit(0)
 
 	tstart = time.clock()
 	tstampt = time.gmtime()
@@ -217,6 +266,41 @@ def evalEmbCls(args):
 	if args.dim_vmin and not dimweighted:
 		np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
 
+	# Generate Gram (nodes similarity) matrix only -----------------------------
+	if args.network is None:
+		# Note: metric here is distance metric = 1 - sim_metric
+		if OPTIMIZED:
+			gram = np.empty((features_matrix.shape[0], features_matrix.shape[0]), dtype=ValT)
+			metid = sm.sim_id(args.metric)
+		else:
+			metric = args.metric
+			if metric == 'jaccard':
+				metric = dist_jaccard
+				# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
+		if dis_features_matrix is None:
+			if OPTIMIZED:
+				# Note: pdist takes too much time with custom dist funciton: 1m46 sec for cosine, 40 sec for jaccard vs 8 sec for "cosine"
+				sm.pairsim(gram, features_matrix, metid)
+				# gram2 = squareform(ValT(1) - pdist(X_train, metric))  # cosine, jaccard, hamming
+				# print('Gram:\n', gram, '\nOrig Gram:\n', gram2)
+			else:
+				gram = squareform(ValT(1) - pdist(features_matrix, metric))  # cosine, jaccard, hamming
+		else:
+			if OPTIMIZED:
+				sm.pairsimdis(gram, features_matrix, dis_features_matrix, metid)
+			else:
+				if metric == 'cosine':
+					metric = dist_cosine
+				if OPTIMIZED:
+					dis_metric = sm.dissim
+				# else:
+				# 	dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
+				gram = pairsimdis(features_matrix, dis_features_matrix, metric, dis_metric)
+		# Save resulting Gram (network nodes similarity) matrix
+		savemat(args.resutls, mdict={'gram': gram})
+		return
+
+	# Evaluate Embeddings ------------------------------------------------------
 	# 2. Load labels
 	mat = loadmat(args.network)  # Compressed Sparse Column format
 	# A = mat[args.adj_matrix_name]
@@ -303,7 +387,7 @@ def evalEmbCls(args):
 					else:
 						metric = args.metric
 						if metric == 'jaccard':
-							metric = lambda u, v: ValT(1) - np.minimum(u, v).sum() / np.maximum(u, v).sum()
+							metric = dist_jaccard
 							# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 					if dis_features_matrix is None:
 						if OPTIMIZED:
@@ -326,27 +410,10 @@ def evalEmbCls(args):
 								metric = dist_cosine
 							if OPTIMIZED:
 								dis_metric = sm.dissim
-							else:
-								def dis_metric(u, v):
-									"""Jaccard-like dissimilarity distance metric"""
-									return np.absolute(u - v).sum() / np.maximum(u, v).sum()
-								#dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
+							# else:
+							# 	dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
 
-							sims = np.empty(training_size * (training_size - 1) // 2, dtype=ValT)
-							icur = 0
-							for i in range(training_size - 1):
-								for j in range(i + 1, training_size):
-									#sims[icur] = ValT(1) - metric(X_train[i], X_train[j]) - dis_metric(Xdis_train[i], Xdis_train[j])
-									# Note: positive gram matrix yields abit more accurate resutls
-									# print('> x[i].T.shape: {} ({}, T: {}), asarr(x[i]).shape: {} ({}), ravel(x[i]).shape: {} ({})'
-									# 	.format(X_train[i].T.shape, hex(id(X_train[i])), hex(id(X_train[i].T))
-									# 	, np.asarray(X_train[i]).shape, hex(id(np.asarray(X_train[i])))
-									# 	, np.ravel(X_train[i]).shape, hex(id(np.ravel(X_train[i]))) ))
-									sims[icur] = ValT(1) - (metric(X_train[i], X_train[j]) + dis_metric(Xdis_train[i], Xdis_train[j])) / ValT(2)
-									icur += 1
-							assert icur == len(sims), 'sims size validation failed'
-							gram = squareform(sims)
-
+							gram = pairsimdis(X_train, Xdis_train, metric, dis_metric)
 							# gram_test = 1 - cdist(X_test, X_train, metric);
 							#gram_test = np.empty((len(X_test), training_size), dtype=ValT)
 							for i in range(len(X_test)):
