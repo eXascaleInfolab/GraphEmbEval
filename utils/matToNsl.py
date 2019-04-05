@@ -34,7 +34,7 @@ def matToNsl(mnet, dirnet=None, outdir=None, backup=True):
 	# Create the destination file backing up the existing one if any
 	netname = os.path.splitext(mnet)[0]
 	if outdir is not None:
-		netname = '/'.join((outdir, os.path.split(mnet)[1]))
+		netname = '/'.join((outdir, os.path.split(netname)[1]))
 	netext = '.nsa' if dirnet else '.nse'
 	onet = netname + netext
 	if backup and os.path.isfile(onet):
