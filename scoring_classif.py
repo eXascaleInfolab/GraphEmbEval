@@ -286,7 +286,7 @@ def evalEmbCls(args):
 		np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
 
 	# Generate Gram (nodes similarity) matrix only -----------------------------
-	if args.network is None:
+	if args.mode == 'gram':
 		# Note: metric here is distance metric = 1 - sim_metric
 		if OPTIMIZED:
 			gram = np.empty((features_matrix.shape[0], features_matrix.shape[0]), dtype=ValT)
@@ -316,7 +316,7 @@ def evalEmbCls(args):
 				# 	dis_metric = metric  # Note: 1-sim metric performs less accurate than the custom dissimilarity metric
 				gram = pairsimdis(features_matrix, dis_features_matrix, metric, dis_metric)
 		# Save resulting Gram (network nodes similarity) matrix
-		savemat(args.resutls, mdict={'gram': gram})
+		savemat(args.output, mdict={'gram': gram})
 		return
 
 	# Evaluate Embeddings ------------------------------------------------------

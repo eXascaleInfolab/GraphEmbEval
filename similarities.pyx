@@ -14,7 +14,7 @@ from scipy.sparse import coo_matrix, isspmatrix_coo
 import numpy as np  # Used for the doctests
 
 cdef extern from 'math.h':
-	float fminf(float x, float y) nogil
+	# float fminf(float x, float y) nogil
 	float fmaxf(float x, float y) nogil
 	float fabsf(float x) nogil
 	float powf(float base, float exp) nogil
@@ -190,8 +190,12 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 	for i in range(arrsize):  # prange
 		va = a[i]
 		vb = b[i]
-		nom += fminf(va, vb)
-		den += fmaxf(va, vb)
+		if va <= vb:
+			nom += va
+			den += vb
+		else:
+			nom += vb
+			den += va
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
 	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if den != 0:
