@@ -1,0 +1,6 @@
+setuptools==20.7  # Cython modules compilation
+numpy==1.15
+Cython==0.29  # Cython modules compilation
+future==0.17  # Python 2/3 compatibility
+scipy==1.2
+scikit_learn==0.20
