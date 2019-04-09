@@ -113,14 +113,12 @@ def parseArgs(opts=None):
 									   # , help='Embedding processing modes')
 	evaluator = subparsers.add_parser('eval', help='Evaluate embeddings')
 	subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
-	# mode = parser.add_mutually_exclusive_group(required=True)
-	# mode.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
-	# # mode.add_argument("-g", "--network", default=None,
-	# # 					help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
-	# mode.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embeddings'
-	# 					' instead of the embeddings evaluation.')
 
-	parser.add_argument("-e", "--embeddings", required=True, help='Embeddings file in the .mat or .nvc format')
+	# Allow either tests execution or embeddings evaluation
+	egr = parser.add_mutually_exclusive_group(required=True)
+	egr.add_argument("-e", "--embeddings", help='Embeddings file in the .mat or .nvc format')  # , required=True
+	egr.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
+
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
@@ -130,7 +128,6 @@ def parseArgs(opts=None):
 	parser.add_argument("-o", "--output", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
 	parser.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
-	parser.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
 	evaluator.add_argument("-g", "--network", required=True,
@@ -154,6 +151,9 @@ def parseArgs(opts=None):
 	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
 
 	args = parser.parse_args(opts)
+	if args.sim_tests:
+		return args
+
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
 	assert args.num_shuffles >= 1, 'num_shuffles is out of range'
 	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
@@ -274,16 +274,25 @@ def evalEmbCls(args):
 				for (i, j), v in dis_features_matrix.items():
 					dis_features_matrix[i, j] = v * dimwdis[j] if not args.dim_vmin or v >= args.dim_vmin else w0
 				dis_features_matrix = dis_features_matrix.toarray() #.todense() # order='C'
-				np.where(dis_features_matrix > w0, dis_features_matrix, 0)
+				if OPTIMIZED:
+					sm.quantify(dis_features_matrix, sm.CMP_LE, w0, 0)
+				else:
+					np.where(dis_features_matrix > w0, dis_features_matrix, 0)
 		features_matrix = features_matrix.toarray() #.todense() # order='C'
 		if dimweighted:
-			np.where(features_matrix > w0, features_matrix, 0)
+			if OPTIMIZED:
+				sm.quantify(features_matrix, sm.CMP_LE, w0, 0)
+			else:
+				np.where(features_matrix > w0, features_matrix, 0)
 	else:
 		raise ValueError('Embeddings in the unknown format specified: ' + args.embeddings)
 
 	# Cut weights lower dim_vmin if required
 	if args.dim_vmin and not dimweighted:
-		np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
+		if OPTIMIZED:
+			sm.quantify(features_matrix, sm.CMP_LT, args.dim_vmin, 0)
+		else:
+			np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
 
 	# Generate Gram (nodes similarity) matrix only -----------------------------
 	if args.mode == 'gram':

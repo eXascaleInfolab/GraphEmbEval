@@ -47,24 +47,39 @@ ctypedef ValT[::1]  ValArrayT  # C-contiguous 1-dimentional memory view (just Va
 ctypedef ValT[:,::1]  ValMatrixT  # C-contiguous 2-dimentional memory view
 # ctypedef const ValT[:,::1]  ConstValMatrixT  # C-contiguous 2-dimentional memory view
 
-	# Similarity function pointer
+# Similarity function pointer
 ctypedef ValT (*SimilarityF)(ValArrayT a, ValArrayT b) nogil
 
+# Comparison function pointer
+ctypedef bint (*CmpF)(ValT a, ValT b) nogil
+
 # Enum of similarity functions
-cpdef enum Similarities:
+cpdef enum Similarity:
 	SIM_COSINE = 1
 	SIM_JACCARD = 2
 	SIM_HAMMING = 3
 	SIM_DISSIM = 0xff
 
+# Enum of comparison functions
+cpdef enum Comparison:
+	CMP_NE = 0
+	CMP_EQ = 1
+	CMP_LT = 2
+	CMP_LE = 3
+	CMP_GT = 4
+	CMP_GE = 5
 
-# Function declarations --------------------------------------------------------
+# # Global constants
+# cdef ValT  valNaN
+# valNaN = float("NaN")
+
+# Function definitions ---------------------------------------------------------
 def sim_id(str sim):
 	"""Fetch similarity function id by the string name
 
 	sim: str  - name of the similarity funciton
 
-	return simid: Similarities  - id of the similarity function
+	return simid: Similarity  - id of the similarity function
 	"""
 	sim = sim.lower()
 	if sim == 'cosine':
@@ -76,7 +91,7 @@ def sim_id(str sim):
 	# elif sim == 'dissim':
 	# 	return SIM_DISSIM
 	else:
-		raise ValueError('Unknown similrity value: ' + sim)
+		raise ValueError('Unknown similarity literal: ' + sim)
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -91,7 +106,7 @@ def colindicesnz(mat not None):
 	>>> colindicesnz(coo_matrix([[1,0,2], [0,2,0]], dtype=np.uint8))
 	[[0, 2], [1]]
 	"""
-	assert len(mat.shape) == 2 and isspmatrix_coo(mat), 'A valid COO matrix is expected'
+	assert mat.ndim == 2 and isspmatrix_coo(mat), 'A valid COO matrix is expected'
 	cdef:
 		list  res = [[] for _ in range(mat.shape[0])]
 		unsigned  i, r
@@ -99,6 +114,82 @@ def colindicesnz(mat not None):
 	for i, r in enumerate(mat.row):
 		res[r].append(mat.col[i])
 	return res
+
+
+cdef:
+	bint c_ne(ValT a, ValT b) nogil:
+		return a != b
+
+	bint c_eq(ValT a, ValT b) nogil:
+		return a == b
+
+	bint c_lt(ValT a, ValT b) nogil:
+		return a < b
+
+	bint c_le(ValT a, ValT b) nogil:
+		return a <= b
+
+	bint c_gt(ValT a, ValT b) nogil:
+		return a > b
+
+	bint c_ge(ValT a, ValT b) nogil:
+		return a >= b
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+cdef void c_quantify(ValMatrixT mat, Comparison op, ValT cv, ValT qv=0) nogil:
+	"""Quantify matrix values satisfying the specified condition
+
+	mat: ValMatrixT  - a matrix to be modified
+	op: Comparison  - comparison operation for the matrix values
+	cv: ValT  - comparing control value
+	qv: ValT  - quantifying value
+	"""
+	cdef CmpF opf = NULL
+	if op == CMP_NE:
+		opf = c_ne
+	if op == CMP_EQ:
+		opf = c_eq
+	elif op == CMP_LT:
+		opf = c_lt
+	elif op == CMP_LE:
+		opf = c_le
+	elif op == CMP_GT:
+		opf = c_gt
+	elif op == CMP_GE:
+		opf = c_ge
+	# else:
+	# 	#raise ValueError('Unknown comparison literal: ' + op)
+	# 	return -1
+
+	cdef unsigned  i, j, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
+
+	for i in range(rows):  # prange(arrsize, nogil=True))
+		for j in range(cols):
+			if opf(mat[i, j], cv):
+				mat[i, j] = qv
+
+
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def quantify(ValMatrixT mat not None, Comparison op, ValT cv, ValT qv=0):
+	"""Quantify matrix values satisfying the specified condition
+
+	mat: ValMatrixT  - a matrix to be modified
+	op: Comparison  - comparison operation for the matrix values
+	cv: ValT  - comparing control value
+	qv: ValT  - quantifying value
+
+
+	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
+		quantify(mat, CMP_GE, 0.6, 0.1); \
+		(mat == np.array([[0, 0.1, 0.5], [0.2, 0.5, 0]], dtype=np.float32)).all()
+	True
+	"""
+	if mat.ndim != 2:
+		raise ValueError('A valid input matrix is expected, size mat.shape: ' + str(mat.ndim))
+	c_quantify(mat, op, cv, qv)
 
 
 # Note: "nogil" suffix can be used with parallel elementwise operations dealing
@@ -160,7 +251,7 @@ def sim_cosine(ValArrayT a not None, ValArrayT b not None):
 	>>> round(sim_cosine(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.787347
 	"""
-	if a.shape[0] != b.shape[0] or a.size != a.shape[0] or b.size != b.shape[0]:
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
 	return c_sim_cosine(a, b)
 
@@ -222,7 +313,7 @@ def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 	>>> round(sim_jaccard(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.333333
 	"""
-	if a.shape[0] != b.shape[0]:
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
 	return c_sim_jaccard(a, b)
 
@@ -280,7 +371,7 @@ def sim_hamming(ValArrayT a not None, ValArrayT b not None):
 	>>> round(sim_hamming(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.333333
 	"""
-	if a.shape[0] != b.shape[0]:
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
 	return c_sim_hamming(a, b)
 
@@ -338,15 +429,15 @@ def dissim(ValArrayT a not None, ValArrayT b not None):
 	>>> round(dissim(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.666667
 	"""
-	if a.shape[0] != b.shape[0]:
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
 	return c_dissim(a, b)
 
 
-cdef SimilarityF c_sim_metric(Similarities sim):
+cdef SimilarityF c_sim_metric(Similarity sim):
 	"""Fetch similarity metric function pointer by the enum value
 
-	sim: Similarities  - requested similarity function
+	sim: Similarity  - requested similarity function
 
 	return simf: SimilarityF  - the resulting similarity metric funciton pointer
 	"""
@@ -365,12 +456,12 @@ cdef SimilarityF c_sim_metric(Similarities sim):
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def pairsim(ValMatrixT res not None, ValMatrixT x not None, Similarities sim):
+def pairsim(ValMatrixT res not None, ValMatrixT x not None, Similarity sim):
 	"""Compose pairwise similarity (Gram) matrix for the input array of vectors
 
 	res: ValMatrixT  - resulting similarity matrix NxN. Note: all values are rewritten
 	x: ValMatrixT  - input array of vectors NxD
-	sim: Similarities  - applied similarity metric
+	sim: Similarity  - applied similarity metric
 
 	>>> res = np.empty((2, 2), dtype=np.float32);\
 		pairsim(res, np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32), SIM_JACCARD);\
@@ -399,14 +490,14 @@ def pairsim(ValMatrixT res not None, ValMatrixT x not None, Similarities sim):
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def pairsimdis(ValMatrixT res not None, ValMatrixT xs not None, ValMatrixT xd not None, Similarities sim):
+def pairsimdis(ValMatrixT res not None, ValMatrixT xs not None, ValMatrixT xd not None, Similarity sim):
 	"""Compose pairwise similarity (Gram) matrix for the input arrays of similarity
 	and dissimilarity based weighted vectors
 
 	res: ValMatrixT  - resulting similarity matrix NxN. Note: all values are rewritten
 	xs: ValMatrixT  - input array of similarity based weighted vectors NxD
 	xd: ValMatrixT  - input array of dissimilarity based weighted vectors NxD
-	sim: Similarities  - applied similarity metric
+	sim: Similarity  - applied similarity metric
 	"""
 	assert res.shape[0] == res.shape[1] and xs.shape == xd.shape, 'Matrix shapes validation failed'
 
@@ -430,13 +521,13 @@ def pairsimdis(ValMatrixT res not None, ValMatrixT xs not None, ValMatrixT xd no
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def pairsim2(ValMatrixT res, ValMatrixT xa not None, ValMatrixT xb not None, Similarities sim):
+def pairsim2(ValMatrixT res, ValMatrixT xa not None, ValMatrixT xb not None, Similarity sim):
 	"""Compose pairwise similarity (Gram) matrix for each inter pair of the vectors of the input arrays
 
 	res: ValMatrixT  - resulting similarity matrix NxM. Note: all values are rewritten
 	xa: ValMatrixT  - input array of vectors NxD
 	xb: ValMatrixT  - input array of vectors MxD
-	sim: Similarities  - applied similarity metric
+	sim: Similarity  - applied similarity metric
 
 	>>> res = np.empty((2, 1), dtype=np.float32);\
 		pairsim2(res, np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32)\
@@ -463,7 +554,7 @@ def pairsim2(ValMatrixT res, ValMatrixT xa not None, ValMatrixT xb not None, Sim
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 def pairsimdis2(ValMatrixT res, ValMatrixT xas not None, ValMatrixT xbs not None
-, ValMatrixT xad not None, ValMatrixT xbd not None, Similarities sim):
+, ValMatrixT xad not None, ValMatrixT xbd not None, Similarity sim):
 	"""Compose pairwise similarity (Gram) matrix for each inter pair of the vectors
 	of the input arrays of similarity and dissimilarity based weighted
 
@@ -472,7 +563,7 @@ def pairsimdis2(ValMatrixT res, ValMatrixT xas not None, ValMatrixT xbs not None
 	xad: ValMatrixT  - input array of dissimilarity based weighted vectors NxD
 	xbs: ValMatrixT  - input array of similarity based weighted vectors MxD
 	xbb: ValMatrixT  - input array of dissimilarity based weighted vectors MxD
-	sim: Similarities  - applied similarity metric
+	sim: Similarity  - applied similarity metric
 	"""
 	assert (res.shape[0] == xas.shape[0] and res.shape[1] == xbs.shape[0]
 		and xas.shape[1] == xbs.shape[1] and xas.shape == xad.shape
