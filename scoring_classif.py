@@ -232,6 +232,25 @@ def pairsimdis(features, dis_features, metric, dis_metric):
 	return squareform(sims)
 
 
+def adjustRows(num, *mats):
+	"""Adjust the number of rows (1st dimension) of the specified matrices
+
+	num: uint  - the required number of rows
+	mats: iterable(MultiDimArray)  - the multidimentional arrays to be adjusted
+
+	return res: bool  - the matrices were reduced or it was not necessary
+	"""
+	reduced = False
+	for i, mt in enumerate(mats):
+		if mt.shape[0] < num:
+			raise ValueError('ERROR: the input matrix #{} has less rows ({}) than required ({}).'
+				.format(i, mt.shape[0], num))
+		if mt.shape[0] > num:
+			mt = mt[0:num, ...]
+			reduced = True
+	return reduced
+
+
 def evalEmbCls(args):
 	"""Evaluate graph/network embedding via the multi-lable classification
 
@@ -247,7 +266,16 @@ def evalEmbCls(args):
 	dimwsim = None  # Dimension weights (significance ratios)
 	dimwdis = None  # Dimension weights for the dissimilarity
 
-	# 1. Load Embeddings
+	# 1.1 Load labels
+	mat = loadmat(args.network)  # Compressed Sparse Column format
+	# A = mat[args.adj_matrix_name]
+	# graph = sparse2graph(A)
+	labels_matrix = mat[args.label_matrix_name]  # csc_matrix
+	labels_count = labels_matrix.shape[1]
+	mlb = MultiLabelBinarizer(range(labels_count))
+	lbnds = labels_matrix.shape[0]  # The number of labeled nodes
+
+	# 1.2 Load Embeddings
 	# model = KeyedVectors.load_word2vec_format(args.embeddings, binary=False)
 	dimweighted = False
 	dis_features_matrix = None  # Dissimilarity features matrix
@@ -255,8 +283,16 @@ def evalEmbCls(args):
 		mat = loadmat(args.embeddings)
 		# Map nodes to their features
 		features_matrix = mat['embs']
+		allnds = features_matrix.shape[0]
+		if allnds > lbnds and adjustRows(lbnds, features_matrix):
+			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
+				.format(allnds, lbnds), file=sys.stderr)
 	elif args.embeddings.lower().endswith('.nvc'):
 		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embeddings)
+		allnds = features_matrix.shape[0]
+		if allnds > lbnds and adjustRows(lbnds, features_matrix, dimrds, dimrws, dimwsim, dimwdis):
+			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
+				.format(allnds, lbnds), file=sys.stderr)
 		# Omit dissimilarity weighting if required
 		if args.no_dissim:
 			dimwdis = None
@@ -329,18 +365,11 @@ def evalEmbCls(args):
 		return
 
 	# Evaluate Embeddings ------------------------------------------------------
-	# 2. Load labels
-	mat = loadmat(args.network)  # Compressed Sparse Column format
-	# A = mat[args.adj_matrix_name]
-	# graph = sparse2graph(A)
-	labels_matrix = mat[args.label_matrix_name]  # csc_matrix
-	labels_count = labels_matrix.shape[1]
-	mlb = MultiLabelBinarizer(range(labels_count))
-
 	# Map nodes to their features (note:  assumes nodes are labeled as integers 1:N)
 	# features_matrix = np.asarray([model[str(node)] for node in range(len(graph))])
 
 	# 2. Shuffle, to create train/test groups
+	assert labels_matrix.shape[0] == features_matrix.shape[0], 'All evaluating nodes are expected to be labeled'
 	shuffles = []
 	for x in range(args.num_shuffles):
 		if dis_features_matrix is not None:
