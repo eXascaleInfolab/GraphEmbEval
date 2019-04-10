@@ -236,7 +236,7 @@ def adjustRows(num, *mats):
 	"""Adjust the number of rows (1st dimension) of the specified matrices
 
 	num: uint  - the required number of rows
-	mats: iterable(MultiDimArray)  - multidimentional NumPy arrays with C ordering to be adjusted
+	mats: iterable(MultiDimArray)  - multidimentional matrices or NumPy arrays with C ordering to be adjusted
 
 	return res: bool  - the matrices are reduced or the reduction was not necessary
 
@@ -251,12 +251,16 @@ def adjustRows(num, *mats):
 		if mt.shape[0] < num:
 			raise ValueError('ERROR: the input matrix #{} has less rows ({}) than required ({}).'
 				.format(i, mt.shape[0], num))
-		if np.isfortran(mt):
-			raise ValueError('ERROR: the input matrix #{} is Fortran but not C-ordered.'.format(i))
+		nparr = isinstance(mt, np.ndarray)
+		if nparr and np.isfortran(mt):
+			raise ValueError('ERROR: the input ndarray #{} is Fortran but not C-ordered.'.format(i))
 		if mt.shape[0] > num:
 			msz = list(mt.shape)
 			msz[0] = num
-			mt.resize(msz, refcheck=False)
+			if nparr:
+				mt.resize(msz, refcheck=False)
+			else:
+				mt.resize(msz)
 			# mt = mt[0:num, ...]
 			reduced = True
 	return reduced
