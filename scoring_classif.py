@@ -117,7 +117,7 @@ def parseArgs(opts=None):
 	# Allow either tests execution or embeddings evaluation
 	egr = parser.add_mutually_exclusive_group(required=True)
 	egr.add_argument("-e", "--embeddings", help='Embeddings file in the .mat or .nvc format')  # , required=True
-	egr.add_argument("--sim-tests", default=False, action='store_true', help='Run doc tests for the similarities module.')
+	egr.add_argument("--run-tests", default=False, action='store_true', help='Run doc tests for all modules including "similarities".')
 
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
@@ -151,7 +151,7 @@ def parseArgs(opts=None):
 	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
 
 	args = parser.parse_args(opts)
-	if args.sim_tests:
+	if args.run_tests:
 		return args
 
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
@@ -236,17 +236,28 @@ def adjustRows(num, *mats):
 	"""Adjust the number of rows (1st dimension) of the specified matrices
 
 	num: uint  - the required number of rows
-	mats: iterable(MultiDimArray)  - the multidimentional arrays to be adjusted
+	mats: iterable(MultiDimArray)  - multidimentional NumPy arrays with C ordering to be adjusted
 
-	return res: bool  - the matrices were reduced or it was not necessary
+	return res: bool  - the matrices are reduced or the reduction was not necessary
+
+	>>> mt = np.array(((0, 1, 2), (3, 4, 5), (6, 7, 8)), dtype=np.uint8); adjustRows(2, mt) and \
+		(mt == np.array(((0, 1, 2), (3, 4, 5)), dtype=np.uint8)).all()
+	True
 	"""
 	reduced = False
 	for i, mt in enumerate(mats):
+		if mt is None:
+			continue
 		if mt.shape[0] < num:
 			raise ValueError('ERROR: the input matrix #{} has less rows ({}) than required ({}).'
 				.format(i, mt.shape[0], num))
+		if np.isfortran(mt):
+			raise ValueError('ERROR: the input matrix #{} is Fortran but not C-ordered.'.format(i))
 		if mt.shape[0] > num:
-			mt = mt[0:num, ...]
+			msz = list(mt.shape)
+			msz[0] = num
+			mt.resize(msz, refcheck=False)
+			# mt = mt[0:num, ...]
 			reduced = True
 	return reduced
 
@@ -577,17 +588,19 @@ if __name__ == "__main__":
 	args = parseArgs()
 	if args.no_cython:
 		OPTIMIZED = False
-	if args.sim_tests:
+	if args.run_tests:
 		# Doc tests execution
 		import doctest
 		# import pyximport; pyximport.install()
 		#doctest.testmod()  # Detailed tests output
 		flags = doctest.REPORT_NDIFF | doctest.REPORT_ONLY_FIRST_FAILURE
-		failed, total = doctest.testmod(sm, optionflags=flags)
-		if failed:
-			print("Doctest FAILED: {} failures out of {} tests".format(failed, total))
-		else:
-			print('Doctest PASSED: {} tests'.format(total))
+		modules = [sm, sys.modules[__name__]]
+		for md in modules:
+			failed, total = doctest.testmod(md, optionflags=flags)
+			if failed:
+				print("Doctest of the module {} FAILED: {} failures out of {} tests".format(md.__name__, failed, total))
+			else:
+				print('Doctest of the module {} PASSED: {} tests'.format(md.__name__, total))
 	else:
 		PROFILE = PROFILE and (not args or args.profile)
 		if PROFILE:
