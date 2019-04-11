@@ -139,7 +139,7 @@ def parseArgs(opts=None):
 	evaluator.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel)'
 						'. ATTENTION: has priority over the SVM kernel')
 	evaluator.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix)'
-						', rbf (accurate but slower), linear (less accurate)')
+						', rbf (accurate, slow), linear (slow)')
 	evaluator.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	evaluator.add_argument("--all", default=False, action='store_true',
 						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
