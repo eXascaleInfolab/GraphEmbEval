@@ -18,17 +18,26 @@ cdef extern from 'math.h':
 	float fmaxf(float x, float y) nogil
 	float fabsf(float x) nogil
 	float powf(float base, float exp) nogil
+	float sqrtf(float x) nogil
+cdef extern from "float.h":
+	cdef float FLT_MAX
 from libc.math cimport sqrt as c_sqrt  #, fminf, fmaxf, fabsf
-# from libc.math cimport fminf, fmaxf, fabsf
-# cdef extern from "math.h":
-#	double sqrt "c_sqrt"(double x)
+# from libc.stdio cimport printf
 # from cython.parallel import prange
 # cimport numpy as np
+#
+# from libc.math cimport abs as c_abs
+# cdef extern from "math.h":
+#	double sqrt "c_sqrt"(double x)
 cimport cython
 
 
 # Types declarations -----------------------------------------------------------
 ctypedef float  ValT  # Value type, np.float32_t
+# ctypedef unsigned char  BoolT
+# ctypedef fused TValT:
+# 	float
+# 	unsigned char
 # ctypedef fused ValT:
 # 	float
 # 	double
@@ -39,16 +48,31 @@ ctypedef float  ValT  # Value type, np.float32_t
 # ctypedef np.ndarray[ValT]  ValArrayT
 # ctypedef np.ndarray[ValT, ndim=2]  ValMatrixT
 ctypedef ValT[::1]  ValArrayT  # C-contiguous 1-dimentional memory view (just ValT[:] defines the strided layout)
+# ctypedef BoolT[::1]  BoolArrayT  # C-contiguous 1-dimentional memory view (just ValT[:] defines the strided layout)
+# ctypedef TValT[::1]  TValArrayT
+# ctypedef fused TValArrayT:
+# 	ValT[::1]
+# 	BoolT[::1]
 # ctypedef ValT[:,::1]  ValArrayT  # C-contiguous 1-dimentional memory view (just ValT[:] defines the strided layout)
 # ctypedef fused ValArrayT:
 # 	ValT[::1]
 # 	ValT[:,::1]
 # ctypedef const ValT[::1]  ConstValArrayT  # C-contiguous 1-dimentional memory view (just ValT[:] defines the strided layout)
 ctypedef ValT[:,::1]  ValMatrixT  # C-contiguous 2-dimentional memory view
+# ctypedef BoolT[:,::1]  BoolMatrixT  # C-contiguous 2-dimentional memory view
+# ctypedef TValT[:,::1]  TValMatrixT
+# ctypedef fused TValMatrixT:
+# 	ValT[:,::1]
+# 	BoolT[:,::1]
 # ctypedef const ValT[:,::1]  ConstValMatrixT  # C-contiguous 2-dimentional memory view
 
 # Similarity function pointer
 ctypedef ValT (*SimilarityF)(ValArrayT a, ValArrayT b) nogil
+# ctypedef ValT (*BoolSimilarityF)(BoolArrayT a, BoolArrayT b) nogil
+# ctypedef ValT (*TSimilarityF)(TValArrayT a, TValArrayT b) nogil
+# ctypedef fused TSimilarityF:
+# 	ValT (*)(ValArrayT a, ValArrayT b) nogil
+# 	ValT (*)(BoolArrayT a, BoolArrayT b) nogil
 
 # Comparison function pointer
 ctypedef bint (*CmpF)(ValT a, ValT b) nogil
@@ -134,6 +158,112 @@ cdef:
 
 	bint c_ge(ValT a, ValT b) nogil:
 		return a >= b
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+# cdef void c_binarize(BoolMatrixT res, ValMatrixT mat, float eps=1e-4) nogil:
+cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
+	"""Quantify matrix values satisfying the specified condition
+
+	mat: ValMatrixT  - the matrix to be binarized
+	eps: float  - accuracy epsilon
+	"""
+	# res: BoolMatrixT  - resulting binarized matrix
+	cdef unsigned  i, j, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
+	cdef ValT  v, vmin, vmax
+	cdef float  avg, bmarg, pmsqr, nmsqr, bmargpr
+	cdef unsigned  pnum, nnum
+	cdef bint  nneg
+
+	for i in range(rows):  # prange(arrsize, nogil=True))
+		avg = 0
+		vmin = FLT_MAX
+		vmax = -FLT_MAX
+		for j in range(cols):
+			v = mat[i, j]
+			avg += v
+			if v < vmin:
+				vmin = v
+			elif v > vmax:
+				vmax = v
+		avg /= cols
+		bmargpr = 0  # bmarg of the previous iteration
+		bmarg = (2 * avg + vmin + vmax) / 4.  # Initial binarization margin
+		# Adjust bmarg minimizing the mean square error (for v > 1 otherwise mean [linear] error)
+		# printf('r%u dbmarg: %G (%G <- %G)\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr)
+		while fabsf(bmarg - bmargpr) > eps:
+			bmargpr = bmarg
+			pmsqr = 0  # Positive mean square error
+			pnum = 0
+			nmsqr = 0  # Negative mean square error
+			nnum = 0
+			for j in range(cols):
+				v = mat[i, j] - bmarg
+				nneg = v >= 0
+				v = fabsf(v)
+				if v > 1:  # Note: a^2 < a for a E (0, 1)
+					v *= v
+				if nneg:
+					pmsqr += v
+					pnum += 1
+				else:
+					nmsqr += v
+					nnum += 1
+			if pnum:
+				pmsqr /= pnum
+				if pmsqr > 1:
+					pmsqr = sqrtf(pmsqr)
+			if nnum:
+				nmsqr /= nnum
+				if nmsqr > 1:
+					nmsqr = sqrtf(nmsqr)
+			bmarg += (pmsqr - nmsqr) / 2
+			# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
+		# Form the resulting binarized mattrix
+		for j in range(cols):
+			mat[i, j] = mat[i, j] >= bmarg
+
+
+# @cython.initializedcheck(False) # Turn off memoryview initialization check
+# def binarize(BoolMatrixT res not None, ValMatrixT mat not None, float eps=1e-4):
+# 	"""Quantify matrix values satisfying the specified condition
+#
+# 	res: BoolMatrixT  - resulting binarized matrix
+# 	mat: ValMatrixT  - a matrix to be binarized
+# 	eps: float  - accuracy epsilon
+#
+#
+# 	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
+# 		res = np.empty(mat.shape, dtype=np.uint8); \
+# 		binarize(res, mat); \
+# 		(res == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
+# 	True
+# 	"""
+# 	if mat.ndim != 2 or tuple(res.shape) != tuple(mat.shape):
+# 		raise ValueError('Valid input matrices are expected, res.shape (ndim: {}): {}, mat.shape (ndim: {}): {}, ineq shapes: {}'
+# 			.format(res.ndim, res.shape, mat.ndim, mat.shape, tuple(res.shape) != tuple(mat.shape)))
+# 	c_binarize(res, mat, eps)
+
+
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def binarize(ValMatrixT mat not None, float eps=1e-4):
+	"""Quantify matrix values satisfying the specified condition
+
+	res: BoolMatrixT  - resulting binarized matrix
+	mat: ValMatrixT  - a matrix to be binarized
+	eps: float  - accuracy epsilon
+
+
+	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
+		binarize(mat); \
+		(mat == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
+	True
+	"""
+	if mat.ndim != 2:
+		raise ValueError('Valid input matrices are expected, shape ndim: ' + str(mat.ndim))
+	c_binarize(mat, eps)
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -322,6 +452,7 @@ def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
+# cdef ValT c_sim_hamming(BoolArrayT a, BoolArrayT b) nogil:
 	"""Hamming similarity function
 
 	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
@@ -336,22 +467,11 @@ cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 	# 	'Valid arrays of the equal length are expected')
 	cdef:
 		unsigned  nom = 0  # Nomerator of the (Weighted) Jaccard Index
-		unsigned  den = 0  # Denomerator of the (Weighted) Jaccard Index
 		unsigned  i, arrsize = a.shape[0]  # Py_ssize_t
-		ValT  va, vb
 
 	for i in range(arrsize):  # prange
-		va = a[i]
-		vb = b[i]
-		nom += <bint>(va and vb)
-		den += <bint>(va or vb)
-	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
-	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
-	if den != 0:
-		va = <ValT>nom / den
-	else:
-		va = powf(0.25, arrsize)
-	return va
+		nom += <bint>a[i] == <bint>b[i]
+	return <ValT>nom / arrsize
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -368,7 +488,7 @@ def sim_hamming(ValArrayT a not None, ValArrayT b not None):
 	return
 		sim: ValT  - Hamming similarity between the input arrays
 
-	>>> round(sim_hamming(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	>>> round(sim_hamming(np.array([0, 1, 1], dtype=np.float32), np.array([1, 1, 0], dtype=np.float32)), 6)
 	0.333333
 	"""
 	if a.ndim != 1 or a.shape[0] != b.shape[0]:
@@ -453,10 +573,44 @@ cdef SimilarityF c_sim_metric(Similarity sim):
 		raise ValueError('Unexpected similarity function: ' + str(sim))
 
 
+# cdef BoolSimilarityF c_boolsim_metric(Similarity sim):
+# 	"""Fetch bool similarity metric function pointer by the enum value
+#
+# 	sim: Similarity  - requested similarity function
+#
+# 	return simf: BoolSimilarityF  - the resulting similarity metric funciton pointer
+# 	"""
+# 	if sim == SIM_HAMMING:
+# 		return c_sim_hamming
+# 	else:
+# 		raise ValueError('Unexpected bool similarity function: ' + str(sim))
+#
+#
+# def tsim_metric(Similarity sim):
+# 	"""Fetch similarity metric function pointer by the enum value
+#
+# 	sim: Similarity  - requested similarity function
+#
+# 	return simf: TSimilarityF  - the resulting similarity metric funciton pointer
+# 	"""
+# 	if sim == SIM_HAMMING:
+# 		return c_sim_hamming
+# 	else:
+# 		if sim == SIM_COSINE:
+# 			return c_sim_cosine
+# 		elif sim == SIM_JACCARD:
+# 			return c_sim_jaccard
+# 		else:
+# 			raise ValueError('Unexpected similarity function: ' + str(sim))
+
+
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 def pairsim(ValMatrixT res not None, ValMatrixT x not None, Similarity sim):
+# def pairsim(ValMatrixT res not None, TValMatrixT x not None, Similarity sim):
+# def pairsim(ValMatrixT res not None, TValMatrixT x, TSimilarityF simf):
+# def pairsim(ValMatrixT res not None, TValT[:,::1] x, ValT (*simf)(TValT[::1] a, TValT[::1] b) nogil):
 	"""Compose pairwise similarity (Gram) matrix for the input array of vectors
 
 	res: ValMatrixT  - resulting similarity matrix NxN. Note: all values are rewritten

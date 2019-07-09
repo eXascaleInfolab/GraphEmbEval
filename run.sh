@@ -13,7 +13,12 @@ OUTP="res/algs.res"
 ##METRIC=cosine  # cosine, jaccard, hamming
 METRICS="cosine jaccard"  # "cosine jaccard hamming"
 #METRICS=cosine
-ALGORITHMS="Deepwalk GraRep HOPE LINE12 netmf Node2vec Verse"  # LTH_INHMF LTH_ITQ LTH_SGH LTH_SH NodeSketch SK_ANH sketch_o1
+# Algorithms based on the cosine similarity metric-based optimization dimensions building
+ALGORITHMS="Deepwalk GraRep HOPE LINE12 netmf Node2vec Verse"
+# Algorithms based on the hamming distance metric-based optimization dimensions building
+#ALGORITHMS_HAMMING="LTH_INHMF LTH_ITQ LTH_SGH LTH_SH NodeSketch SK_ANH sketch_o1"
+# Types> LTH_INHMF: int16 (-1, 1); LTH_ITQ/SGH/SH: uint8(0, 1);
+# NodeSketch, SK_ANH, sketch_o1: uint16 (0 .. 2^16) !!
 #ALGORITHMS="GraRep"
 GRAPHS="blogcatalog dblp homo wiki youtube"
 #GRAPHS=blogcatalog
@@ -125,4 +130,4 @@ fi
 echo "FREEMEM: $FREEMEM"
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
-parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 98% ${EXECUTOR} scoring_classif.py --embeddings embeds/algsEmbeds/embs_{2}_{1}.mat -m {3} -o "${OUTP}" eval --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 98% ${EXECUTOR} scoring_classif.py -m {3} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.mat --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}

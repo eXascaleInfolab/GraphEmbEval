@@ -18,7 +18,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 # from sklearn.svm import LinearSVC
 
-from scipy.spatial.distance import squareform, pdist, cdist, cosine as dist_cosine
+from scipy.spatial.distance import squareform, pdist, cdist, cosine as dist_cosine, hamming as dist_hamming
 # from scipy.sparse import coo_matrix
 from scipy.io import loadmat, savemat
 from sklearn.metrics import f1_score
@@ -42,7 +42,7 @@ import time
 OPTIMIZED = True  # True
 # Enable automatic rebuild of the Cython modules on changes
 # (might have dependency issues in the end-user environment)
-AUTOREBUILD = False  # True;
+AUTOREBUILD = False  # True; Otherwise: $ python setup.py build_ext --inplace
 if OPTIMIZED:
 	if AUTOREBUILD:
 		import pyximport; pyximport.install()  # Automatic build of the Cython modules
@@ -109,15 +109,16 @@ def parseArgs(opts=None):
 	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
-	subparsers = parser.add_subparsers(title='Embeddings processing modes', dest='mode') #, description='Modes of the input embeddings processing')
+	subparsers = parser.add_subparsers(title='Embedding processing modes', dest='mode') #, description='Modes of the input embedding processing')
 									   # , help='Embedding processing modes')
-	evaluator = subparsers.add_parser('eval', help='Evaluate embeddings')
-	subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
+	evaluator = subparsers.add_parser('eval', help='Evaluate embedding')
+	gram = subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
+	subparsers.add_parser('test', help='Run doc tests for all modules including "similarities"')  # Mote: has no any specific parameters
 
-	# Allow either tests execution or embeddings evaluation
-	egr = parser.add_mutually_exclusive_group(required=True)
-	egr.add_argument("-e", "--embeddings", help='Embeddings file in the .mat or .nvc format')  # , required=True
-	egr.add_argument("--run-tests", default=False, action='store_true', help='Run doc tests for all modules including "similarities".')
+	# # Allow either tests execution or embedding evaluation
+	# egr = parser.add_mutually_exclusive_group(required=True)
+	# egr.add_argument("-e", "--embedding", help='File name of the embedding in .mat or .nvc format')  # , required=True
+	# egr.add_argument("--run-tests", default=False, action='store_true', help='Run doc tests for all modules including "similarities".')
 
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
 						help='Apply dimension weights if specified (applicable for the NVC format only)')
@@ -130,7 +131,8 @@ def parseArgs(opts=None):
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
-	evaluator.add_argument("-g", "--network", required=True,
+	evaluator.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format')  # , required=True
+	evaluator.add_argument("-n", "--network", required=True,
 						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
 	evaluator.add_argument("--adj-matrix-name", default='network',
 						help='Variable name of the adjacency matrix inside the network .mat file.')
@@ -142,16 +144,18 @@ def parseArgs(opts=None):
 						', rbf (accurate, slow), linear (slow)')
 	evaluator.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	evaluator.add_argument("--all", default=False, action='store_true',
-						help='The embeddings are evaluated on all training percents from 10 to 90 when this flag is set to true. '
+						help='The embedding is evaluated on all training percents from 10 to 90 when this flag is set to true. '
 						'By default, only training percents of {} are used.'.format(', '.join([str(v) for v in _trainperc_dfl])))
 	evaluator.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
-	# parser.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embeddings'
-	# 					' instead of the embeddings evaluation.')
+	# parser.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embedding'
+	# 					' instead of the embedding evaluation.')
 	# parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
 	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
 
+	gram.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format')  # , required=True
+
 	args = parser.parse_args(opts)
-	if args.run_tests:
+	if args.mode == 'test':  # args.run_tests:
 		return args
 
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
@@ -166,7 +170,7 @@ def parseArgs(opts=None):
 		assert args.kernel in ('precomputed', 'rbf', 'linear'), 'Unexpexted kernel'
 
 	if args.output is None:
-		fname = os.path.splitext(os.path.split(args.embeddings)[1])[0]
+		fname = os.path.splitext(os.path.split(args.embedding)[1])[0]
 		if args.mode == 'gram':  # Mode gram
 			fname = fname.join(('gram_', '.mat'))
 		else:  # Mode eval
@@ -244,7 +248,7 @@ def adjustRows(num, *mats):
 		(mt == np.array(((0, 1, 2), (3, 4, 5)), dtype=np.uint8)).all()
 	True
 	"""
-	reduced = False
+	reduced = False  # At least one matix is reduced
 	for i, mt in enumerate(mats):
 		if mt is None:
 			continue
@@ -290,20 +294,20 @@ def evalEmbCls(args):
 	mlb = MultiLabelBinarizer(range(labels_count))
 	lbnds = labels_matrix.shape[0]  # The number of labeled nodes
 
-	# 1.2 Load Embeddings
-	# model = KeyedVectors.load_word2vec_format(args.embeddings, binary=False)
+	# 1.2 Load Embedding
+	# model = KeyedVectors.load_word2vec_format(args.embedding, binary=False)
 	dimweighted = False
 	dis_features_matrix = None  # Dissimilarity features matrix
-	if args.embeddings.lower().endswith('.mat'):
-		mat = loadmat(args.embeddings)
+	if args.embedding.lower().endswith('.mat'):
+		mat = loadmat(args.embedding)
 		# Map nodes to their features
 		features_matrix = np.array(mat['embs'], dtype=np.float32)
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
 				.format(allnds, lbnds), file=sys.stderr)
-	elif args.embeddings.lower().endswith('.nvc'):
-		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embeddings)
+	elif args.embedding.lower().endswith('.nvc'):
+		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embedding)
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix, dimrds, dimrws, dimwsim, dimwdis):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
@@ -336,7 +340,7 @@ def evalEmbCls(args):
 			else:
 				np.where(features_matrix > w0, features_matrix, 0)
 	else:
-		raise ValueError('Embeddings in the unknown format specified: ' + args.embeddings)
+		raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 
 	# Cut weights lower dim_vmin if required
 	if args.dim_vmin and not dimweighted:
@@ -344,6 +348,12 @@ def evalEmbCls(args):
 			sm.quantify(features_matrix, sm.CMP_LT, args.dim_vmin, 0)
 		else:
 			np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
+
+	# Binarize if required in case of hamming distance evaluation
+	if args.metric == 'hamming':
+		sm.binarize(features_matrix)
+		if dis_features_matrix is not None:
+			sm.binarize(dis_features_matrix)
 
 	# Generate Gram (nodes similarity) matrix only -----------------------------
 	if args.mode == 'gram':
@@ -370,6 +380,8 @@ def evalEmbCls(args):
 			else:
 				if metric == 'cosine':
 					metric = dist_cosine
+				elif metric == 'hamming':
+					metric = dist_hamming
 				if OPTIMIZED:
 					dis_metric = sm.dissim
 				# else:
@@ -379,7 +391,7 @@ def evalEmbCls(args):
 		savemat(args.output, mdict={'gram': gram})
 		return
 
-	# Evaluate Embeddings ------------------------------------------------------
+	# Evaluate Embedding ------------------------------------------------------
 	# Map nodes to their features (note:  assumes nodes are labeled as integers 1:N)
 	# features_matrix = np.asarray([model[str(node)] for node in range(len(graph))])
 
@@ -480,6 +492,8 @@ def evalEmbCls(args):
 						else:
 							if metric == 'cosine':
 								metric = dist_cosine
+							elif metric == 'hamming':
+								metric = dist_hamming
 							if OPTIMIZED:
 								dis_metric = sm.dissim
 							# else:
@@ -529,7 +543,7 @@ def evalEmbCls(args):
 				for i, b in enumerate(hf.digest()):
 					hbrief = hbrief ^ b << (8 if i%2 else 0)
 				# Output detailed accuracy results
-				dname, fname = os.path.split(args.embeddings)
+				dname, fname = os.path.split(args.embedding)
 				acrname = ''.join((dname, '/acr_', os.path.splitext(fname)[0], '_', str(hbrief), '.mat'))
 				print('The detailed accuracy results are saved to: ', acrname)
 				try:
@@ -542,7 +556,7 @@ def evalEmbCls(args):
 				if not fres.tell():
 					fres.write('Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t F1mac\t Solver'
 						'\tBCl\t ExecTime\t   Folds\t StartTime        \tInpHash\tEmbeds\n')
-				# Embeddings file name and Dimensions number
+				# File name of the embedding and Dimensions number
 				print('{: >4}\t{: >3d}\t'.format(features_matrix.shape[1], args.weighted_dims)
 					, file=fres, end='')
 				# Similarity Metric, weighting, no-dissim and dim-val-min
@@ -566,9 +580,9 @@ def evalEmbCls(args):
 				print('{: >2}.{:0>2}/{: >2}.{:0>2}\t {}\t'.format(ii, jj, res.shape[1], res.shape[0]
 					, time.strftime('%y-%m-%d_%H:%M:%S', tstampt)), file=fres, end='')
 				print('{: >7}\t{}\n'.format(str(hbrief) if hbrief else '-'
-					, os.path.split(args.embeddings)[1]), file=fres, end='')
+					, os.path.split(args.embedding)[1]), file=fres, end='')
 
-	# print ('Results, using embeddings of dimensionality', X.shape[1])
+	# print ('Results, using embedding of dimensionality', X.shape[1])
 	# print ('-------------------')
 	# for train_percent in sorted(all_results.keys()):
 	#   print ('Train percent:', train_percent)
@@ -592,7 +606,7 @@ if __name__ == "__main__":
 	args = parseArgs()
 	if args.no_cython:
 		OPTIMIZED = False
-	if args.run_tests:
+	if args.mode == 'test':  # args.run_tests:
 		# Doc tests execution
 		import doctest
 		# import pyximport; pyximport.install()
