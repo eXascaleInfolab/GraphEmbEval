@@ -301,7 +301,7 @@ def evalEmbCls(args):
 	if args.embedding.lower().endswith('.mat'):
 		mat = loadmat(args.embedding)
 		# Map nodes to their features
-		features_matrix = np.array(mat['embs'], dtype=np.float32)
+		features_matrix = np.array(mat['embs'], dtype=np.float32, order='C')
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
