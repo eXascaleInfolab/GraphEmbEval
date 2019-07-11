@@ -23,6 +23,7 @@ cdef extern from 'math.h':
 	float roundf(float x) nogil
 cdef extern from "float.h":
 	cdef float FLT_MAX
+	cdef float FLT_EPSILON
 cdef extern from "errno.h":
 	cdef int ENOMEM
 from libc.math cimport sqrt as c_sqrt  #, fminf, fmaxf, fabsf
@@ -220,8 +221,8 @@ cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
 					imed = j
 			v = imed * dmax + vmin  # The median value
 			# Guarantee that the lowest value is below the binarization margin
-			if v - eps < vmin:
-				v += eps
+			if v - FLT_EPSILON < vmin:
+				v += FLT_EPSILON
 			# 	# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
 			# Form the resulting binarized mattrix
 			for j in range(cols):
