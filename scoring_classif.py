@@ -126,6 +126,8 @@ def parseArgs(opts=None):
 						help='Omit dissimilarity weighting (if weights are specified at all)')
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
+	parser.add_argument("-b", "--binarize", default=False, action='store_true', help='Binarize the embedding minimizing the Mean Square Error.'
+						' NOTE: the median binarizaion is always performed automatically for the hamming metric omitting this flag.')
 	parser.add_argument("-o", "--output", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
 	parser.add_argument("--num-shuffles", default=5, type=int, help='Number of shuffles of the embedding matrix, >= 1.')
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
@@ -350,10 +352,11 @@ def evalEmbCls(args):
 			np.where(features_matrix >= args.dim_vmin, features_matrix, 0)
 
 	# Binarize if required in case of hamming distance evaluation
-	if args.metric == 'hamming':
-		sm.binarize(features_matrix)
+	medbin = args.metric == 'hamming'  # Binarize to the median instead of reducing mean square error
+	if args.binarize or medbin:
+		sm.binarize(features_matrix, medbin)
 		if dis_features_matrix is not None:
-			sm.binarize(dis_features_matrix)
+			sm.binarize(dis_features_matrix, medbin)
 
 	# Generate Gram (nodes similarity) matrix only -----------------------------
 	if args.mode == 'gram':
