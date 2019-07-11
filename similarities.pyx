@@ -219,10 +219,13 @@ cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
 					nvals += nv
 					imed = j
 			v = imed * dmax + vmin  # The median value
+			# Guarantee that the lowest value is below the binarization margin
+			if v - eps < vmin:
+				v += eps
 			# 	# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
 			# Form the resulting binarized mattrix
 			for j in range(cols):
-				mat[i, j] = mat[i, j] > v  # ATTENTION: strictly > is required to correctly process already binarized data
+				mat[i, j] = mat[i, j] >= v
 	finally:
 		free(vdens)
 	return 0
