@@ -19,9 +19,16 @@ cdef extern from 'math.h':
 	float fabsf(float x) nogil
 	float powf(float base, float exp) nogil
 	float sqrtf(float x) nogil
+	float log2f(float x) nogil
+	float roundf(float x) nogil
 cdef extern from "float.h":
 	cdef float FLT_MAX
+cdef extern from "errno.h":
+	cdef int ENOMEM
 from libc.math cimport sqrt as c_sqrt  #, fminf, fmaxf, fabsf
+from libc.stdlib cimport malloc, free  # calloc
+from libc.stdint cimport uint16_t, UINT16_MAX
+# from libc.float cimport FLT_MAX
 # from libc.stdio cimport printf
 # from cython.parallel import prange
 # cimport numpy as np
@@ -164,71 +171,61 @@ cdef:
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 # cdef void c_binarize(BoolMatrixT res, ValMatrixT mat, float eps=1e-4) nogil:
-cdef void c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
+cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
 	"""Binarize (quantify) matrix values to the median
 
 	mat: ValMatrixT  - the matrix to be binarized
 	eps: float  - desirable accuracy error
 	"""
 	# res: BoolMatrixT  - resulting binarized matrix
-	cdef unsigned  i, j, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
+	cdef unsigned  i, j, rows = mat.shape[0], cols = mat.shape[1], qsize = <unsigned>(1 / eps)
+	cdef unsigned  hqsize = <unsigned>roundf(qsize / 2.), imed, nvals, nv  # Py_ssize_t
 	cdef ValT  v, vmin, vmax
-	cdef float  dmax, bmarg, pmsqr, nmsqr, bmargpr, corr
-	cdef unsigned  pnum, nnum
-	cdef bint  nneg
+	cdef float  dmax
+	cdef uint16_t *vdens = <uint16_t*>malloc(sizeof(uint16_t) * qsize)  # calloc(qsize, sizeof(float))
 
-	for i in range(rows):  # prange(arrsize, nogil=True))
-		vmin = FLT_MAX
-		vmax = -FLT_MAX
-		for j in range(cols):
-			v = mat[i, j]
-			if v < vmin:
-				vmin = v
-			elif v > vmax:
-				vmax = v
-		dmax = vmax - vmin
-
-		# avg /= cols
-		# bmargpr = 0  # bmarg of the previous iteration
-		# bmarg = (2 * avg + vmin + vmax) / 4.  # Initial binarization margin
-		# # Adjust bmarg minimizing the mean square error (for v > 1 otherwise mean [linear] error)
-		# # printf('r%u dbmarg: %G (%G <- %G)\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr)
-		# corr = bmarg - bmargpr  # The binary margin correction on the currect iteration
-		# while fabsf(corr) > eps:
-		# 	pmsqr = 0  # Positive mean square error
-		# 	pnum = 0
-		# 	nmsqr = 0  # Negative mean square error
-		# 	nnum = 0
-		# 	for j in range(cols):
-		# 		v = mat[i, j] - bmarg
-		# 		nneg = v >= 0
-		# 		v = fabsf(v)
-		# 		if v > 1:  # Note: a^2 < a for a E (0, 1)
-		# 			v *= v
-		# 		if nneg:
-		# 			pmsqr += v
-		# 			pnum += 1
-		# 		else:
-		# 			nmsqr += v
-		# 			nnum += 1
-		# 	if pnum:
-		# 		pmsqr /= pnum
-		# 		if pmsqr > 1:
-		# 			pmsqr = sqrtf(pmsqr)
-		# 	if nnum:
-		# 		nmsqr /= nnum
-		# 		if nmsqr > 1:
-		# 			nmsqr = sqrtf(nmsqr)
-		# 	bmargpr = bmarg
-		# 	bmarg += (pmsqr - nmsqr) / 2
-		# 	# Terminate the cycle if the convergence is not occur
-		# 	if bmarg - bmargpr >= corr:
-		# 		break
-		# 	corr = bmarg - bmargpr
-		# 	# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
-		# # Form the resulting binarized mattrix
-		# for j in range(cols):
-		# 	mat[i, j] = mat[i, j] >= bmarg
+	if not vdens:  # same as 'is NULL' above
+		# raise MemoryError('Memory allocation failed for the vdens array')
+		return ENOMEM
+	try:
+		for i in range(rows):  # prange(arrsize, nogil=True))
+			# Identify the column values range
+			vmin = FLT_MAX
+			vmax = -FLT_MAX
+			for j in range(cols):
+				v = mat[i, j]
+				if v < vmin:
+					vmin = v
+				elif v > vmax:
+					vmax = v
+			dmax = vmax - vmin
+			# Clear the vdens array
+			for j in range(qsize):
+				vdens[j] = 0
+			# Accumulate the number of quantified values to find the median
+			for j in range(cols):
+				vdens[<unsigned>roundf((mat[i, j] - vmin) / dmax)] += 1
+			# Identify index of the median
+			imed = 0  # Index of the median
+			nvals = 0  # The accumulated number of the processed values
+			for j in range(qsize):
+				nv = vdens[j]  # The number of values in the current cell
+				if nvals + nv >= hqsize:
+					if hqsize - nvals > nvals + nv - hqsize:
+						nvals += nv
+						imed = j
+					break
+				if nv:
+					nvals += nv
+					imed = j
+			v = imed * dmax + vmin  # The median value
+			# 	# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
+			# Form the resulting binarized mattrix
+			for j in range(cols):
+				mat[i, j] = mat[i, j] > v  # ATTENTION: strictly > is required to correctly process already binarized data
+	finally:
+		free(vdens)
+	return 0
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
@@ -242,7 +239,7 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 	eps: float  - desirable accuracy error
 	"""
 	# res: BoolMatrixT  - resulting binarized matrix
-	cdef unsigned  i, j, ncorr, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
+	cdef unsigned  i, j, ncorr, ncorrmax = <unsigned>log2f(1 / eps) + 1, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
 	cdef ValT  v, vmin, vmax
 	cdef float  avg, bmarg, pmsqr, nmsqr, bmargpr, corr
 	cdef unsigned  pnum, nnum
@@ -266,7 +263,7 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 		# printf('r%u dbmarg: %G (%G <- %G)\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr)
 		corr = bmarg - bmargpr  # The binary margin correction on the currect iteration
 		ncorr = 0  # The number of performed corrections (iterations)
-		while fabsf(corr) > eps and ncorr < 32:
+		while fabsf(corr) > eps and ncorr < ncorrmax:
 			pmsqr = 0  # Positive mean square error
 			pnum = 0
 			nmsqr = 0  # Negative mean square error
@@ -321,11 +318,14 @@ def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
 		(mat == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
 	True
 	"""
-	if mat.ndim != 2:
-		raise ValueError('Valid input matrices are expected, shape ndim: ' + str(mat.ndim))
+	cdef int err
+	if mat.ndim != 2 or mat.shape[0] > UINT16_MAX or not (0 < eps < 0.1):
+		raise ValueError('Valid input matrices are expected, shape ndim: {}, shape[0]: {} / {}, eps: {}'
+			.format(mat.ndim, mat.shape[0], UINT16_MAX, eps))
 	if median:
-		raise NotImplementedError('The median binarization is not implemented yet')
-		c_binarize_median(mat, eps)
+		err = c_binarize_median(mat, eps)
+		if err:
+			raise RuntimeError('Binarization by median failed with the error code: ' + str(err))
 	else:
 		c_binarize(mat, eps)
 
