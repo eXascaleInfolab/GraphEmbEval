@@ -321,6 +321,10 @@ def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
 		binarize(mat); \
 		(mat == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
 	True
+	>>> mat = np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.float32); \
+		binarize(mat, True); \
+		(mat == np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.uint8)).all()
+	True
 	"""
 	cdef int err
 	if mat.ndim != 2 or mat.shape[0] > UINT16_MAX or not (0 < eps < 0.1):
