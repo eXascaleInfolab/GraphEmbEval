@@ -137,4 +137,4 @@ fi
 echo "FREEMEM: $FREEMEM"
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
-parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 98% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.mat --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.mat --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
