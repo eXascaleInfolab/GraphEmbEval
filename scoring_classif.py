@@ -557,10 +557,10 @@ def evalEmbCls(args):
 			with open(args.output, 'a') as fres:
 				# Output the Header if required
 				if not fres.tell():
-					fres.write('Dims\tWgh\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t F1mac\t Solver'
+					fres.write('Dims\tWgh\tBin\tMetric \tNDs\tDVmin\t F1mic\tF1miSD\t F1mac\t Solver'
 						'\tBCl\t ExecTime\t   Folds\t StartTime        \tInpHash\tEmbeds\n')
 				# File name of the embedding and Dimensions number
-				print('{: >4}\t{: >3d}\t'.format(features_matrix.shape[1], args.weighted_dims)
+				print('{: >4}\t{: >3d}\t{: >3d}\t'.format(features_matrix.shape[1], args.weighted_dims, args.binarize)
 					, file=fres, end='')
 				# Similarity Metric, weighting, no-dissim and dim-val-min
 				if args.solver is None and args.kernel == 'precomputed':
