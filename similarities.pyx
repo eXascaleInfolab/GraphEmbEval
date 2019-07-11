@@ -242,7 +242,7 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 	eps: float  - desirable accuracy error
 	"""
 	# res: BoolMatrixT  - resulting binarized matrix
-	cdef unsigned  i, j, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
+	cdef unsigned  i, j, ncorr, rows = mat.shape[0], cols = mat.shape[1]  # Py_ssize_t
 	cdef ValT  v, vmin, vmax
 	cdef float  avg, bmarg, pmsqr, nmsqr, bmargpr, corr
 	cdef unsigned  pnum, nnum
@@ -260,12 +260,13 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 			elif v > vmax:
 				vmax = v
 		avg /= cols
-		bmargpr = 0  # bmarg of the previous iteration
+		bmargpr = avg  # bmarg of the previous iteration
 		bmarg = (2 * avg + vmin + vmax) / 4.  # Initial binarization margin
 		# Adjust bmarg minimizing the mean square error (for v > 1 otherwise mean [linear] error)
 		# printf('r%u dbmarg: %G (%G <- %G)\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr)
 		corr = bmarg - bmargpr  # The binary margin correction on the currect iteration
-		while fabsf(corr) > eps:
+		ncorr = 0  # The number of performed corrections (iterations)
+		while fabsf(corr) > eps and ncorr < 32:
 			pmsqr = 0  # Positive mean square error
 			pnum = 0
 			nmsqr = 0  # Negative mean square error
@@ -294,8 +295,12 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 			bmarg += (pmsqr - nmsqr) / 2
 			# Terminate the cycle if the convergence is not occur
 			if bmarg - bmargpr >= corr:
+				# # Note: bmarg should always <= bmargpr
+				# if bmarg >= bmargpr + eps:
+				# 	bmarg = bmargpr
 				break
 			corr = bmarg - bmargpr
+			ncorr += 1
 			# printf('r%u dbmarg: %G (%G <- %G); bmarg p/n: %G/-%G\n', i, fabsf(bmarg - bmargpr), bmarg, bmargpr, pmsqr, bmargpr)
 		# Form the resulting binarized mattrix
 		for j in range(cols):
