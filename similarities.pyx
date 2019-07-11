@@ -308,11 +308,11 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 
 
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def binarize(ValMatrixT mat not None, bool median=False, float eps=1e-4):
+def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
 	"""Quantify matrix values satisfying the specified condition
 
 	mat: ValMatrixT  - a matrix to be binarized
-	median: bool  - binarize to the median or minimizing mean square error
+	median: bint  - binarize to the median or minimizing mean square error
 	eps: float  - desirable accuracy error
 
 
