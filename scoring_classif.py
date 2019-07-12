@@ -326,7 +326,7 @@ def evalEmbCls(args):
 				# 	fm[colmat.indices[i], j] = v
 			features_matrix = fm
 			del fm
-			print('  features_matrix reductioncompleted')
+			print('  features_matrix reduction completed')
 			# Cut the accessory arrays to rootdims
 			arrs = [dimrds, dimrws, dimwsim, dimwdis]
 			for ia, arr in enumerate(arrs):
