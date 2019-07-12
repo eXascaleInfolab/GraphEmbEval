@@ -16,10 +16,10 @@ then
 	exit $ERR
 fi
 
-# Note: "free" and "sed" are typically installed by default
+# Note: "free" (not an apt package) and "sed" are typically installed by default
 sudo apt-get install -y \
 	python3 python3-pip \
-	free sed bc \
+	sed bc \
 	parallel
 
 # Check and set locale if required
@@ -34,3 +34,6 @@ sudo pip3 install --upgrade pip
 
 # Install Python dependencies
 sudo pip3 install -r requirements.txt
+
+# Build the Cython lib
+./build.sh

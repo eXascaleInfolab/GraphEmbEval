@@ -14,6 +14,7 @@ OUTP="res/algs.res"
 METRICS="cosine jaccard"  # "cosine jaccard hamming"
 #METRICS=cosine
 BINARIZE=''
+ROOTDIMS=''
 # Algorithms based on the cosine similarity metric-based optimization dimensions building
 ALGORITHMS="Deepwalk GraRep HOPE LINE12 netmf Node2vec NodeSketch SK_ANH sketch_o1 Verse"
 # NodeSketch, SK_ANH, sketch_o1: uint16 (0 .. 2^16) !!
@@ -30,6 +31,7 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
   -o,--output  - results output file. Default: $OUTP
   -m,--metrics  - metrics used for the gram matrix construction. Default: \"$METRICS\"
   -b,--binarize  - binarize embedding by the mean square error
+  --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format
   -a,--algorithms  - evaluationg algorithms. Default: \"$METRICS\"
   -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format
     
@@ -79,6 +81,11 @@ while [ $1 ]; do
 	 -b|--binarize)
 		BINARIZE=$1
 		echo "Set BINARIZE: $BINARIZE"
+		shift
+		;;
+	 --root-dims)
+		ROOTDIMS=$1
+		echo "Set ROOTDIMS: $ROOTDIMS"
 		shift
 		;;
 	 -a|--algorithms)
@@ -137,4 +144,5 @@ fi
 echo "FREEMEM: $FREEMEM"
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
-parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.mat --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+# graphs/{1}.*  # *: .mat | .nvc
+parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.mat --network graphs/{1}.* ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
