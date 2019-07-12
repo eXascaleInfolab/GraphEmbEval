@@ -19,7 +19,7 @@ def loadNvc(nvcfile):
 	nvcfile: str  - file name
 
 	return
-		embeds: matrix(float32)  - embeddings matrix in the Dictionary Of Keys sparse matrix format
+		embeds: matrix(float32)  - embeddings matrix in the Dictionary Of Keys sparse matrix format of the shape (ndsnum, dimnum)
 		rootdims: array(uint16)  - indicies of the root dimensions
 		dimrds: array(float32)  - ratios of dimension (cluster) density step relative to the possibly indirect super cluster, typically >= 1
 		dimrws: array(float32)  - ratios of dimension (cluster) weight step relative to the possibly indirect super cluster, typically <= 1

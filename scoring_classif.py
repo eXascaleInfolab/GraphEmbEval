@@ -24,6 +24,7 @@ from scipy.io import loadmat, savemat
 from sklearn.metrics import f1_score
 from sklearn.utils import shuffle as skshuffle
 from sklearn.preprocessing import MultiLabelBinarizer
+from scipy.sparse import dok_matrix
 
 from hashlib import md5
 
@@ -106,14 +107,14 @@ def parseArgs(opts=None):
 
 	return args  - parsed arguments
 	"""
-	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification',
+	parser = ArgumentParser(description='Network embedding evaluation using multi-lable classification.',
 							formatter_class=ArgumentDefaultsHelpFormatter,
 							conflict_handler='resolve')
 	subparsers = parser.add_subparsers(title='Embedding processing modes', dest='mode') #, description='Modes of the input embedding processing')
 									   # , help='Embedding processing modes')
-	evaluator = subparsers.add_parser('eval', help='Evaluate embedding')
-	gram = subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix')
-	subparsers.add_parser('test', help='Run doc tests for all modules including "similarities"')  # Mote: has no any specific parameters
+	evaluator = subparsers.add_parser('eval', help='Evaluate embedding.')
+	gram = subparsers.add_parser('gram', help='Produce Gram (network nodes similarity) matrix.')
+	subparsers.add_parser('test', help='Run doc tests for all modules including "similarities".')  # Mote: has no any specific parameters
 
 	# # Allow either tests execution or embedding evaluation
 	# egr = parser.add_mutually_exclusive_group(required=True)
@@ -121,10 +122,11 @@ def parseArgs(opts=None):
 	# egr.add_argument("--run-tests", default=False, action='store_true', help='Run doc tests for all modules including "similarities".')
 
 	parser.add_argument("-w", "--weighted-dims", default=False, action='store_true',
-						help='Apply dimension weights if specified (applicable for the NVC format only)')
+						help='Apply dimension weights if specified (applicable only for the NVC format).')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
-						help='Omit dissimilarity weighting (if weights are specified at all)')
-	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1)')
+						help='Omit dissimilarity weighting (if weights are specified at all).')
+	parser.add_argument("--root-dims", default=False, dest='rdims', action='store_true', help='Use only root (top) level dimensions (clusers), actual only for the NVC format.')
+	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1).')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("-b", "--binarize", default=False, action='store_true', help='Binarize the embedding minimizing the Mean Square Error.'
 						' NOTE: the median binarizaion is always performed automatically for the hamming metric omitting this flag.')
@@ -133,17 +135,17 @@ def parseArgs(opts=None):
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
-	evaluator.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format')  # , required=True
+	evaluator.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format.')  # , required=True
 	evaluator.add_argument("-n", "--network", required=True,
 						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
 	evaluator.add_argument("--adj-matrix-name", default='network',
 						help='Variable name of the adjacency matrix inside the network .mat file.')
 	evaluator.add_argument("--label-matrix-name", default='group',
 						help='Variable name of the labels matrix inside the network .mat file.')
-	evaluator.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel)'
-						'. ATTENTION: has priority over the SVM kernel')
-	evaluator.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix)'
-						', rbf (accurate, slow), linear (slow)')
+	evaluator.add_argument("-s", "--solver", default=None, help='Linear Regression solver: liblinear (fastest), lbfgs (less accurate, slower, parallel).'
+						' ATTENTION: has priority over the SVM kernel.')
+	evaluator.add_argument("-k", "--kernel", default='precomputed', help='SVM kernel: precomputed (fast but requires gram/similarity matrix),'
+						' rbf (accurate, slow), linear (slow).')
 	evaluator.add_argument("--balance-classes", default=False, action='store_true', help='Balance (weight) the grouund-truth classes by their size.')
 	evaluator.add_argument("--all", default=False, action='store_true',
 						help='The embedding is evaluated on all training percents from 10 to 90 when this flag is set to true. '
@@ -152,9 +154,9 @@ def parseArgs(opts=None):
 	# parser.add_argument("--gram", default=None, help='Produce Gram (network nodes similarity) matrix in the MAT format from the embedding'
 	# 					' instead of the embedding evaluation.')
 	# parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
-	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat')
+	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat.')
 
-	gram.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format')  # , required=True
+	gram.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format.')  # , required=True
 
 	args = parser.parse_args(opts)
 	if args.mode == 'test':  # args.run_tests:
@@ -310,6 +312,33 @@ def evalEmbCls(args):
 				.format(allnds, lbnds), file=sys.stderr)
 	elif args.embedding.lower().endswith('.nvc'):
 		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embedding)
+		# Cut loaded data to rootdims if required
+		if args.rdims:
+			print('Reduction to the root dimensions started')
+			# Cut the features_matrix to rootdims
+			fm = dok_matrix((features_matrix.shape[0], rootdims.size), dtype=features_matrix.dtype)
+			for j, ir in enumerate(rootdims):
+				colmat = features_matrix.getcol(ir)
+				# print('> colmat type: {}, shape: {}, attrs: {}'.format(type(colmat), colmat.shape, dir(colmat)))
+				for i, v in enumerate(colmat.values()):
+					fm[i, j] = v
+				# for i, v in enumerate(colmat.data):
+				# 	fm[colmat.indices[i], j] = v
+			features_matrix = fm
+			del fm
+			print('  features_matrix reductioncompleted')
+			# Cut the accessory arrays to rootdims
+			arrs = [dimrds, dimrws, dimwsim, dimwdis]
+			for ia, arr in enumerate(arrs):
+				# Omit None arrays
+				if arr is None:
+					continue
+				tarr = np.zeros(rootdims.size, arr.dtype)
+				for i, ir in enumerate(rootdims):
+					tarr[i] = arr[ir]
+				arrs[ia] = tarr
+			rootdims = None
+			print('  reductoin of all loaded data completed')
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix, dimrds, dimrws, dimwsim, dimwdis):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
