@@ -331,20 +331,20 @@ def binarize(ValMatrixT mat not None, bint median=False, bint polarize=True, flo
 
 
 	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
-		binarize(mat); \
+		binarize(mat, median=False, polarize=False); \
 		(mat == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
 	True
 	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
 		binarize(mat, False, True); \
-		(mat == np.array([[-1, 1, 1], [-1, 1, -1]], dtype=np.float32)).all()
+		(mat == np.array([[-1, 1, 1], [-1, 1, -1]], dtype=np.int8)).all()
 	True
 	>>> mat = np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.float32); \
-		binarize(mat, True); \
+		binarize(mat, True, False); \
 		(mat == np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.uint8)).all()
 	True
 	>>> mat = np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.float32); \
 		binarize(mat, True, True); \
-		(mat == np.array([[-1, -1, 1, -1, 1, -1], [-1, -1, 1, -1, 1, 1], [1, 1, 1, 1, 1, -1]], dtype=np.uint8)).all()
+		(mat == np.array([[-1, -1, 1, -1, 1, -1], [-1, -1, 1, -1, 1, 1], [1, 1, 1, 1, 1, -1]], dtype=np.int8)).all()
 	True
 	"""
 	cdef int err
@@ -352,7 +352,7 @@ def binarize(ValMatrixT mat not None, bint median=False, bint polarize=True, flo
 		raise ValueError('Valid input matrices are expected, shape ndim: {}, shape[0]: {} / {}, eps: {}'
 			.format(mat.ndim, mat.shape[0], UINT16_MAX, eps))
 	if median:
-		err = c_binarize_median(mat, polarize. eps)
+		err = c_binarize_median(mat, polarize, eps)
 		if err:
 			raise RuntimeError('Binarization by median failed with the error code: ' + str(err))
 	else:
