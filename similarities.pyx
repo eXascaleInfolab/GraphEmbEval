@@ -461,8 +461,8 @@ def sim_cosine(ValArrayT a not None, ValArrayT b not None):
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
-	"""(Weighted) Jaccard similarity function
+cdef ValT c_sim_jaccardwu(ValArrayT a, ValArrayT b) nogil:
+	"""(Weighted Unsigned) Jaccard similarity function for non-ngative floating point numbers
 
 	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
 
@@ -470,7 +470,7 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 	b: ValArrayT  - second array
 
 	return
-		sim: ValT  - Jaccard similarity between the input arrays
+		sim: ValT  - Jaccard similarity between the input arrays, E [0, 1]
 	"""
 	# assert a is not None and b is not None and a.shape[0] == b.shape[0], (  # a != NULL
 	# 	'Valid arrays of the equal length are expected')
@@ -489,6 +489,82 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 		else:
 			nom += vb
 			den += va
+		# if vb < va:
+		# 	va = vb
+		# 	vb = a[i]
+		# nom += va
+		# den += vb
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
+	if den != 0:
+		nom /= den
+	else:
+		nom = powf(0.25, arrsize)
+	return nom
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def sim_jaccardwu(ValArrayT a not None, ValArrayT b not None):
+	"""(Weighted Unsigned) Jaccard similarity function for arbitrary foating point numbers
+
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+
+	a: ValArrayT  - first array
+	b: ValArrayT  - second array
+
+	return
+		sim: ValT  - Jaccard similarity between the input arrays
+
+	>>> round(sim_jaccardwu(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.333333
+	"""
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
+		raise ValueError('Valid arrays of the equal length are expected')
+	return c_sim_jaccardwu(a, b)
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
+	"""(Weighted Signed) Jaccard similarity function for arbitrary foating point numbers
+
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+
+	a: ValArrayT  - first array
+	b: ValArrayT  - second array
+
+	return
+		sim: ValT  - Jaccard similarity between the input arrays, E [-1, 1]
+	"""
+	# assert a is not None and b is not None and a.shape[0] == b.shape[0], (  # a != NULL
+	# 	'Valid arrays of the equal length are expected')
+	cdef:
+		double  nom = 0  # Nomerator of the (Weighted) Jaccard Index
+		double  den = 0  # Denomerator of the (Weighted) Jaccard Index
+		unsigned  i, arrsize = a.shape[0]  # Py_ssize_t
+		ValT  va, vb
+		bint  inv  # The numbers have distinct sign (inverse correlation)
+
+	for i in range(arrsize):  # prange
+		va = a[i]
+		vb = b[i]
+		inv = (va < 0) != (vb < 0)
+		va = fabsf(va)
+		vb = fabsf(vb)
+		if va <= vb:
+			nom += va * (1 - 2 * inv)
+			den += vb
+		else:
+			nom += vb * (1 - 2 * inv)
+			den += va
+		# if vb < va:
+		# 	va = vb
+		# 	vb = fabsf(a[i])
+		# nom += va * (1 - 2 * inv)
+		# den += vb
 	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
 	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if den != 0:
@@ -502,7 +578,7 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
-	"""(Weighted) Jaccard similarity function
+	"""(Weighted Signed) Jaccard similarity function for arbitrary foating point numbers
 
 	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
 
@@ -514,6 +590,11 @@ def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 
 	>>> round(sim_jaccard(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.333333
+	>>> sim_jaccard(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)) == \
+		sim_jaccardwu(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32))
+	True
+	>>> round(sim_jaccard(np.array([0, -0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	-0.333333
 	"""
 	if a.ndim != 1 or a.shape[0] != b.shape[0]:
 		raise ValueError('Valid arrays of the equal length are expected')
