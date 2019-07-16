@@ -172,10 +172,11 @@ cdef:
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 # cdef void c_binarize(BoolMatrixT res, ValMatrixT mat, float eps=1e-4) nogil:
-cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
+cdef int c_binarize_median(ValMatrixT mat, bint polarize=False, float eps=1e-4) nogil:
 	"""Binarize (quantify) matrix values to the median
 
 	mat: ValMatrixT  - the matrix to be binarized
+	polarize: bint  - binarize to {-1, 1} instead of {0, 1}
 	eps: float  - desirable accuracy error
 	"""
 	# res: BoolMatrixT  - resulting binarized matrix
@@ -227,6 +228,11 @@ cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
 			# Form the resulting binarized mattrix
 			for j in range(cols):
 				mat[i, j] = mat[i, j] >= v
+			# Replace 0 with -1 if polarization is requried
+			if polarize:
+				for j in range(cols):
+					if not mat[i, j]:
+						mat[i, j] = -1
 	finally:
 		free(vdens)
 	return 0
@@ -236,10 +242,11 @@ cdef int c_binarize_median(ValMatrixT mat, float eps=1e-4) nogil:
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
 # cdef void c_binarize(BoolMatrixT res, ValMatrixT mat, float eps=1e-4) nogil:
-cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
+cdef void c_binarize(ValMatrixT mat, bint polarize=False, float eps=1e-4) nogil:
 	"""Binarize (quantify) matrix values minimizing the mean square error
 
 	mat: ValMatrixT  - the matrix to be binarized
+	polarize: bint  - binarize to {-1, 1} instead of {0, 1}
 	eps: float  - desirable accuracy error
 	"""
 	# res: BoolMatrixT  - resulting binarized matrix
@@ -306,14 +313,20 @@ cdef void c_binarize(ValMatrixT mat, float eps=1e-4) nogil:
 		# Form the resulting binarized mattrix
 		for j in range(cols):
 			mat[i, j] = mat[i, j] >= bmarg
+		# Replace 0 with -1 if polarization is requried
+		if polarize:
+			for j in range(cols):
+				if not mat[i, j]:
+					mat[i, j] = -1
 
 
 @cython.initializedcheck(False) # Turn off memoryview initialization check
-def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
+def binarize(ValMatrixT mat not None, bint median=False, bint polarize=True, float eps=1e-4):
 	"""Quantify matrix values satisfying the specified condition
 
 	mat: ValMatrixT  - a matrix to be binarized
 	median: bint  - binarize to the median or minimizing mean square error
+	polarize: bint  - binarize to {-1, 1} instead of {0, 1}
 	eps: float  - desirable accuracy error
 
 
@@ -321,9 +334,17 @@ def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
 		binarize(mat); \
 		(mat == np.array([[0, 1, 1], [0, 1, 0]], dtype=np.uint8)).all()
 	True
+	>>> mat = np.array([[0, 0.8, 0.5], [0.2, 0.5, 0]], dtype=np.float32); \
+		binarize(mat, False, True); \
+		(mat == np.array([[-1, 1, 1], [-1, 1, -1]], dtype=np.float32)).all()
+	True
 	>>> mat = np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.float32); \
 		binarize(mat, True); \
 		(mat == np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.uint8)).all()
+	True
+	>>> mat = np.array([[0, 0, 1, 0, 1, 0], [0, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 0]], dtype=np.float32); \
+		binarize(mat, True, True); \
+		(mat == np.array([[-1, -1, 1, -1, 1, -1], [-1, -1, 1, -1, 1, 1], [1, 1, 1, 1, 1, -1]], dtype=np.uint8)).all()
 	True
 	"""
 	cdef int err
@@ -331,11 +352,11 @@ def binarize(ValMatrixT mat not None, bint median=False, float eps=1e-4):
 		raise ValueError('Valid input matrices are expected, shape ndim: {}, shape[0]: {} / {}, eps: {}'
 			.format(mat.ndim, mat.shape[0], UINT16_MAX, eps))
 	if median:
-		err = c_binarize_median(mat, eps)
+		err = c_binarize_median(mat, polarize. eps)
 		if err:
 			raise RuntimeError('Binarization by median failed with the error code: ' + str(err))
 	else:
-		c_binarize(mat, eps)
+		c_binarize(mat, polarize, eps)
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
