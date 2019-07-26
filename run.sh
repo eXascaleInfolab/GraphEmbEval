@@ -1,5 +1,5 @@
 #!/bin/bash
-#!/bin/sh
+#!/usr/bin/env sh
 #
 # \description  Parallel execution of the benchmarking
 #

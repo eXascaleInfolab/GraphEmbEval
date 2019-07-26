@@ -644,8 +644,9 @@ cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 		unsigned  i, arrsize = a.shape[0]  # Py_ssize_t
 
 	for i in range(arrsize):  # prange
-		nom += <bint>a[i] == <bint>b[i]
-	return <ValT>nom / arrsize
+		# Note: <bint> casting is not performed to guarantee correct evaluation for uint values, i.e. hamming(5, 3) = 0
+		nom += a[i] == b[i]
+	return <float>nom / arrsize
 
 
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
