@@ -340,7 +340,7 @@ def evalEmbCls(args):
 					tarr[i] = arr[ir]
 				arrs[ia] = tarr
 			rootdims = None
-			print('  reduction of all loaded data completed on {} sec'.format(int(time.clock() - trd1)))
+			print('  reduction of the accessory loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
