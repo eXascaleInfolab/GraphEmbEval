@@ -252,6 +252,7 @@ def adjustRows(num, *mats):
 		(mt == np.array(((0, 1, 2), (3, 4, 5)), dtype=np.uint8)).all()
 	True
 	"""
+	tstart = time.clock()
 	reduced = False  # At least one matix is reduced
 	for i, mt in enumerate(mats):
 		if mt is None:
@@ -271,6 +272,7 @@ def adjustRows(num, *mats):
 				mt.resize(msz)
 			# mt = mt[0:num, ...]
 			reduced = True
+	print('The {} matrices reduciton to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
 	return reduced
 
 
@@ -311,10 +313,13 @@ def evalEmbCls(args):
 			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
 				.format(allnds, lbnds), file=sys.stderr)
 	elif args.embedding.lower().endswith('.nvc'):
+		tld0 = time.clock()
 		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embedding)
+		tldf = time.clock()
+		print('Feature matrix loaded on {} sec'.format(int(tldf - tld0)))
 		# Cut loaded data to rootdims if required
 		if args.rdims:
-			print('Reduction to the root dimensions started')
+			print('Reduction to the root dimensions started at {} sec'.format(int(tldf)))
 			# Cut the features_matrix to rootdims
 			fm = dok_matrix((features_matrix.shape[0], rootdims.size), dtype=features_matrix.dtype)
 			for j, ir in enumerate(rootdims):
@@ -326,7 +331,8 @@ def evalEmbCls(args):
 				# 	fm[colmat.indices[i], j] = v
 			features_matrix = fm
 			del fm
-			print('  features_matrix reduction completed')
+			trd1 = time.clock()
+			print('  features_matrix reduction completed on {} sec'.format(int(trd1 - tldf)))
 			# Cut the accessory arrays to rootdims
 			arrs = [dimrds, dimrws, dimwsim, dimwdis]
 			for ia, arr in enumerate(arrs):
@@ -338,9 +344,9 @@ def evalEmbCls(args):
 					tarr[i] = arr[ir]
 				arrs[ia] = tarr
 			rootdims = None
-			print('  reductoin of all loaded data completed')
+			print('  reductoin of all loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
-		if allnds > lbnds and adjustRows(lbnds, features_matrix, dimrds, dimrws, dimwsim, dimwdis):
+		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
 				.format(allnds, lbnds), file=sys.stderr)
 		# Omit dissimilarity weighting if required
