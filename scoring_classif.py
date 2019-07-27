@@ -325,10 +325,7 @@ def evalEmbCls(args):
 			for j, ir in enumerate(rootdims):
 				colmat = features_matrix.getcol(ir)
 				# print('> colmat type: {}, shape: {}, attrs: {}'.format(type(colmat), colmat.shape, dir(colmat)))
-				for i, v in enumerate(colmat.values()):
-					fm[i, j] = v
-				# for i, v in enumerate(colmat.data):
-				# 	fm[colmat.indices[i], j] = v
+				fm[:, j] = colmat
 			features_matrix = fm
 			del fm
 			trd1 = time.clock()
