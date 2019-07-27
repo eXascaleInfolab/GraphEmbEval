@@ -323,9 +323,8 @@ def evalEmbCls(args):
 			# Cut the features_matrix to rootdims
 			fm = dok_matrix((features_matrix.shape[0], rootdims.size), dtype=features_matrix.dtype)
 			for j, ir in enumerate(rootdims):
-				colmat = features_matrix.getcol(ir)
+				fm[:, j] = features_matrix.getcol(ir)
 				# print('> colmat type: {}, shape: {}, attrs: {}'.format(type(colmat), colmat.shape, dir(colmat)))
-				fm[:, j] = colmat
 			features_matrix = fm
 			del fm
 			trd1 = time.clock()
@@ -341,7 +340,7 @@ def evalEmbCls(args):
 					tarr[i] = arr[ir]
 				arrs[ia] = tarr
 			rootdims = None
-			print('  reductoin of all loaded data completed on {} sec'.format(int(time.clock() - trd1)))
+			print('  reduction of all loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
