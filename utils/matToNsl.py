@@ -51,11 +51,10 @@ def matToNsl(mnet, dirnet=None, outdir=None, backup=True):
 	onet = netname + netext
 	if backup and os.path.isfile(onet):
 		onetbk = onet + '.bck'
-		try:
-			os.rename(onet, onetbk)
-		except OSError:  # On Windows delete the existing file if required
+		# On Windows delete the existing file if required
+		if os.path.isfile(onetbk):
 			os.remove(onetbk)
-			os.rename(onet, onetbk)
+		os.rename(onet, onetbk)
 	# Write destination header
 	# # NSL[A,E] format specification:
 	# # Comments are marked with '#' symbol and allowed only in the begin of the line
@@ -115,7 +114,8 @@ def parseArgs(params=None):
 	parser.add_argument('mnets', metavar='MatNet', type=str, nargs='+', help='Unsigned input network(s) in the .mat format')
 	parser.add_argument('-d', '--directed', dest='directed', action='store_true'
 		, help='form directed output network from possibly directed input network')
-	parser.add_argument('-p', '--path-outp', default=None, help='Path (directory) for the output files')
+	parser.add_argument('-p', '--path-outp', default=None, help='Path (directory) for the output files.'
+		' Default: respective directory of the input file')
 	args = parser.parse_args(params)
 	return args.directed, args.mnets, args.path_outp
 

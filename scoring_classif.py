@@ -135,7 +135,7 @@ def parseArgs(opts=None):
 	parser.add_argument("-p", "--profile", default=False, action='store_true', help='Profile the application execution.')
 	parser.add_argument("--no-cython", default=False, action='store_true', help='Disable optimized routines from the Cython libs.')
 
-	evaluator.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format.')  # , required=True
+	evaluator.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat, .nvc or .csv/.ssv (text) format.')  # , required=True
 	evaluator.add_argument("-n", "--network", required=True,
 						help='An input network (graph): a .mat file containing the adjacency matrix and node labels.')
 	evaluator.add_argument("--adj-matrix-name", default='network',
@@ -156,7 +156,7 @@ def parseArgs(opts=None):
 	# parser.add_argument("-r", "--results", default=None, help='A file name for the aggregated evaluation results. Default: ./<embeds>.res.')
 	evaluator.add_argument("--accuracy-detailed", default=False, help='Output also detailed accuracy evalaution results to ./acr_<evalres>.mat.')
 
-	gram.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc format.')  # , required=True
+	gram.add_argument("-e", "--embedding", required=True, help='File name of the embedding in .mat or .nvc, .nvc or .csv/.ssv (text) format.')  # , required=True
 
 	args = parser.parse_args(opts)
 	if args.mode == 'test':  # args.run_tests:
@@ -304,15 +304,8 @@ def evalEmbCls(args):
 	# model = KeyedVectors.load_word2vec_format(args.embedding, binary=False)
 	dimweighted = False
 	dis_features_matrix = None  # Dissimilarity features matrix
-	if args.embedding.lower().endswith('.mat'):
-		mat = loadmat(args.embedding)
-		# Map nodes to their features
-		features_matrix = np.array(mat['embs'], dtype=np.float32, order='C')
-		allnds = features_matrix.shape[0]
-		if allnds > lbnds and adjustRows(lbnds, features_matrix):
-			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
-				.format(allnds, lbnds), file=sys.stderr)
-	elif args.embedding.lower().endswith('.nvc'):
+	embext = os.path.splitext(args.embedding)[1].lower()
+	if embext == '.nvc':
 		tld0 = time.clock()
 		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embedding)
 		tldf = time.clock()
@@ -373,7 +366,22 @@ def evalEmbCls(args):
 			else:
 				np.where(features_matrix > w0, features_matrix, 0)
 	else:
-		raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
+		features_matrix = None
+		if embext == '.mat':
+			mat = loadmat(args.embedding)
+			# Map nodes to their features
+			features_matrix = np.array(mat['embs'], dtype=np.float32, order='C')
+			del mat
+		elif embext == '.csv':
+			features_matrix = np.loadtxt(args.embedding, dtype=np.float32, delimiter=',')
+		else:  # ssv
+			# Try to parse the file as space separated values
+			features_matrix = np.loadtxt(args.embedding, dtype=np.float32)
+			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
+		allnds = features_matrix.shape[0]
+		if allnds > lbnds and adjustRows(lbnds, features_matrix):
+			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
+				.format(allnds, lbnds), file=sys.stderr)
 
 	# Cut weights lower dim_vmin if required
 	if args.dim_vmin and not dimweighted:
