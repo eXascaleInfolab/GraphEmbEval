@@ -17,10 +17,10 @@ EMBDIMS=128
 BINARIZE=''
 ROOTDIMS=''
 # Algorithms based on the cosine similarity metric-based optimization dimensions building
-ALGORITHMS="Deepwalk GraRep HOPE LINE12 netmf Node2vec NodeSketch SK_ANH sketch_o1 Verse"
+ALGORITHMS="Deepwalk GraRep harp-deepwalk harp-line HOPE LINE12 netmf Node2vec Verse"  # NetHash, NodeSketch SK_ANH sketch_o1
 # NodeSketch, SK_ANH, sketch_o1: uint16 (0 .. 2^16) !!
 # Algorithms based on the hamming distance metric-based optimization dimensions building
-#ALGORITHMS_HAMMING="LTH_INHMF LTH_ITQ LTH_SGH LTH_SH"
+#ALGORITHMS_HAMMING="LTH_INHMF LTH_ITQ LTH_SGH LTH_SH NetHash, NodeSketch, SK_ANH, sketch_o1"
 # Types> LTH_INHMF: int16 (-1, 1); LTH_ITQ/SGH/SH: uint8(0, 1);
 #ALGORITHMS="GraRep"
 GRAPHS="blogcatalog dblp homo wiki youtube"
