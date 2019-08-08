@@ -56,10 +56,11 @@ def parseArgs(params=None):
 	"""
 	parser = argparse.ArgumentParser(description='Network Embedding Vectors converter'
 		' from .csv / .ssv (space separate values) text format to .mat.')
+	parser.add_argument('embs', metavar='Embs', type=str, nargs='+', help='Input embeddings in text (SSV/CSV) format')
 	parser.add_argument('-d', '--outp-dir', default=None, help='Path (directory) for the output files.'
 		' Default: respective directory of the input file')
 	args = parser.parse_args(params)
-	return args.mnets, args.outp_dir
+	return args.embs, args.outp_dir
 
 
 if __name__ == '__main__':
