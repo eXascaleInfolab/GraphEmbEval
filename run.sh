@@ -12,6 +12,7 @@ FREEMEM="8G"  # 8G+ for youtube; 5%
 OUTP="res/algs.res"
 ##METRIC=cosine  # cosine, jaccard, hamming
 METRICS="cosine jaccard"  # "cosine jaccard hamming"
+EMBDIMS=128
 #METRICS=cosine
 BINARIZE=''
 ROOTDIMS=''
@@ -25,15 +26,16 @@ ALGORITHMS="Deepwalk GraRep HOPE LINE12 netmf Node2vec NodeSketch SK_ANH sketch_
 GRAPHS="blogcatalog dblp homo wiki youtube"
 #GRAPHS=blogcatalog
 
-USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+]
+USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [-e <embdims>=${EMBDIMS}]
   -d,--default  - execute everithing with default arguments
-  -f,--free-mem  -  minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
+  -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
   -o,--output  - results output file. Default: $OUTP
   -m,--metrics  - metrics used for the gram matrix construction. Default: \"$METRICS\"
   -b,--binarize  - binarize embedding by the mean square error
-  --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format
   -a,--algorithms  - evaluationg algorithms. Default: \"$METRICS\"
   -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format
+  -e,--emb-dims  - the number of dimensions in the input embeddings (to identify the input embeddings dir as embs<dims>)
+  --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format
     
   Examples:
   \$ $0 -d
@@ -83,11 +85,6 @@ while [ $1 ]; do
 		echo "Set BINARIZE: $BINARIZE"
 		shift
 		;;
-	 --root-dims)
-		ROOTDIMS=$1
-		echo "Set ROOTDIMS: $ROOTDIMS"
-		shift
-		;;
 	 -a|--algorithms)
 		if [ "${2::1}" == "-" ]; then
 			echo "ERROR, invalid argument value of $1: $2"
@@ -106,6 +103,20 @@ while [ $1 ]; do
 		echo "Set $1: $2"
 		shift 2
 		;;
+	-e|--emb-dims)
+		if [ "${2::1}" == "-" ]; then
+			echo "ERROR, invalid argument value of $1: $2"
+			exit 1
+		fi
+		EMBDIMS=$2
+		echo "Set $1: $2"
+		shift 2
+		;;
+	 --root-dims)
+		ROOTDIMS=$1
+		echo "Set ROOTDIMS: $ROOTDIMS"
+		shift
+		;;
 #	-*)
 #		printf "Error: Invalid option specified.\n\n$USAGE"
 #		exit 1
@@ -120,6 +131,7 @@ OUTDIR="$(dirname "$OUTP")"  # Output directory for the executable package
 EXECLOG="$(echo "$OUTP" | cut -f 1 -d '.').log"
 echo "ALGORITHMS: $ALGORITHMS"
 echo "GRAPHS: $GRAPHS"
+echo "EMBDIMS: $EMBDIMS"
 echo "EXECLOG: $EXECLOG"
 
 # Check exictence of the requirements
@@ -145,4 +157,4 @@ echo "FREEMEM: $FREEMEM"
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
 # embs_{2}_{1}.*  # *: .mat | .nvc
-parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/algsEmbeds/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
