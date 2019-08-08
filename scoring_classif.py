@@ -25,6 +25,7 @@ from sklearn.metrics import f1_score
 from sklearn.utils import shuffle as skshuffle
 from sklearn.preprocessing import MultiLabelBinarizer
 from scipy.sparse import dok_matrix
+from shutil import move
 
 from hashlib import md5
 
@@ -380,8 +381,13 @@ def evalEmbCls(args):
 			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
-			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}'
-				.format(allnds, lbnds), file=sys.stderr)
+			embname, embext = os.path.splitext(args.embedding)
+			embrds = embname + '.mat'
+			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}.'
+				  ' Saving the reduced features to the {}...'
+				.format(allnds, lbnds, embrds), file=sys.stderr)
+			move(args.embedding, args.embedding + '.full')
+			savemat(embrds, mdict={'embs': features_matrix})
 
 	# Cut weights lower dim_vmin if required
 	if args.dim_vmin and not dimweighted:
