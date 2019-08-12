@@ -25,6 +25,8 @@ ALGORITHMS="Deepwalk GraRep harp-deepwalk harp-line HOPE LINE12 netmf Node2vec V
 #ALGORITHMS="GraRep"
 GRAPHS="blogcatalog dblp homo wiki youtube"
 #GRAPHS=blogcatalog
+# Max swappiness, should be 1..10 (low swappiness to hold most of data in RAM)
+MAX_SWAP=5
 
 USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [-e <embdims>=${EMBDIMS}]
   -d,--default  - execute everithing with default arguments
@@ -42,8 +44,14 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
   \$ $0 -f 8.5G -o res/algs.res -m cosine -a Deepwalk -g 'dblp wiki'
 "
 
+if [ `cat /proc/sys/vm/swappiness` -gt $MAX_SWAP ]
+then
+	echo "Setting vm.swappiness to $MAX_SWAP..."
+	sudo sysctl -w vm.swappiness=$MAX_SWAP
+fi
+
 if [ $# -lt 1 ]; then
-	echo "Usage: $USAGE"
+	echo -e "Usage: $USAGE"  # -e to interpret correctly '\n'
 	exit 1
 fi
 

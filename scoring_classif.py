@@ -381,12 +381,17 @@ def evalEmbCls(args):
 			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 		allnds = features_matrix.shape[0]
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
-			embname, embext = os.path.splitext(args.embedding)
-			embrds = embname + '.mat'
+			embname = os.path.splitext(args.embedding)[0]
+			# COnsider that .nvc embeddings support multiple options on loading and should be retained
+			if embext != '.nvc':
+				embrds = embname + '.mat'
+				embdir, namext = os.path.split(args.embedding)
+				move(args.embedding, ''.join((embdir, 'full_', namext)))
+			else:
+				embrds = ''.join((embname, '_rds', str(lbnds), '.mat'))
 			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}.'
 				  ' Saving the reduced features to the {}...'
 				.format(allnds, lbnds, embrds), file=sys.stderr)
-			move(args.embedding, args.embedding + '.full')
 			savemat(embrds, mdict={'embs': features_matrix})
 
 	# Cut weights lower dim_vmin if required
@@ -476,7 +481,7 @@ def evalEmbCls(args):
 				gram = np.empty((training_size, training_size), dtype=ValT)
 			gram_test = np.empty((features_matrix.shape[0] - training_size, training_size), dtype=ValT)
 			for jj, shuf in enumerate(shuffles):
-				print('Training set #{} ({}%), shuffle #{}'.format(ii, train_percent*100, jj))
+				print('Training set #{} ({:.1%}), shuffle #{}'.format(ii, train_percent, jj))
 				if dis_features_matrix is not None:
 					X, Xdis, y = shuf
 					#assert len(X) == len(Xdis), 'Feature matrix partitions validation failed'
@@ -635,7 +640,7 @@ def evalEmbCls(args):
 	# for train_percent in sorted(all_results.keys()):
 	#   print ('Train percent:', train_percent)
 	#   for index, result in enumerate(all_results[train_percent]):
-	#     print ('Shuffle #%d:   ' % (index + 1), result)
+	#     print ('Shuffle #{:d}:   '.format(index + 1), result)
 	#   avg_score = defaultdict(float)
 	#   for score_dict in all_results[train_percent]:
 	#     for metric, score in viewitems(score_dict):
