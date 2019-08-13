@@ -267,10 +267,13 @@ def adjustRows(num, *mats):
 		if mt.shape[0] > num:
 			msz = list(mt.shape)
 			msz[0] = num
-			if nparr:
-				mt.resize(msz, refcheck=False)
-			else:
-				mt.resize(msz)
+			try:
+				if nparr:
+					mt.resize(msz, refcheck=False)
+				else:
+					mt.resize(msz)
+			except ValueError:  # An error may occure in case of the container does not own its data
+				mats[i] = mt[:num, ...]
 			# mt = mt[0:num, ...]
 			reduced = True
 	print('The {} matrices reduciton to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
