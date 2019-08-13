@@ -267,13 +267,14 @@ def adjustRows(num, *mats):
 		if mt.shape[0] > num:
 			msz = list(mt.shape)
 			msz[0] = num
-			try:
-				if nparr:
-					mt.resize(msz, refcheck=False)
-				else:
-					mt.resize(msz)
-			except ValueError:  # An error may occure in case of the container does not own its data
-				mats[i] = mt[:num, ...]
+			#try:
+			if nparr:
+				assert mt.flags['OWNDATA'], 'An array is expected, which owns it\'s data to be resized'
+				mt.resize(msz, refcheck=False)
+			else:
+				mt.resize(msz)
+			#except ValueError:  # An error may occure in case of the container (array, matrix) does not own its data
+			#	mats[i] = mt[:num, ...]  # Note: *mats is interpreted as a tuble and can't be assigned
 			# mt = mt[0:num, ...]
 			reduced = True
 	print('The {} matrices reduciton to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
@@ -383,6 +384,9 @@ def evalEmbCls(args):
 			features_matrix = np.loadtxt(args.embedding, dtype=np.float32)
 			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 		allnds = features_matrix.shape[0]
+		# Ensure that the adday can be resized if required (owns it's data ranther than a view)
+		if allnds > lbnds and isinstance(features_matrix, np.ndarray) and not features_matrix.flags['OWNDATA']:
+			features_matrix = features_matrix.copy()
 		if allnds > lbnds and adjustRows(lbnds, features_matrix):
 			embname = os.path.splitext(args.embedding)[0]
 			# COnsider that .nvc embeddings support multiple options on loading and should be retained
