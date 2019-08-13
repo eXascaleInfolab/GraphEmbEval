@@ -386,7 +386,7 @@ def evalEmbCls(args):
 			if embext != '.nvc':
 				embrds = embname + '.mat'
 				embdir, namext = os.path.split(args.embedding)
-				move(args.embedding, ''.join((embdir, 'full_', namext)))
+				move(args.embedding, ''.join((embdir, '/', 'full_', namext)))
 			else:
 				embrds = ''.join((embname, '_rds', str(lbnds), '.mat'))
 			print('WARNING, features matrix is reduced to the number of nodes in the labels matrix: {} -> {}.'
