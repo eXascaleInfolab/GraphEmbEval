@@ -275,7 +275,6 @@ def adjustRows(num, *mats):
 				mt.resize(msz)
 			#except ValueError:  # An error may occure in case of the container (array, matrix) does not own its data
 			#	mats[i] = mt[:num, ...]  # Note: *mats is interpreted as a tuble and can't be assigned
-			# mt = mt[0:num, ...]
 			reduced = True
 	print('The {} matrices reduciton to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
 	return reduced
@@ -385,9 +384,12 @@ def evalEmbCls(args):
 			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 		allnds = features_matrix.shape[0]
 		# Ensure that the adday can be resized if required (owns it's data ranther than a view)
-		if allnds > lbnds and isinstance(features_matrix, np.ndarray) and not features_matrix.flags['OWNDATA']:
-			features_matrix = features_matrix.copy()
-		if allnds > lbnds and adjustRows(lbnds, features_matrix):
+		if allnds > lbnds:
+			if isinstance(features_matrix, np.ndarray) and not features_matrix.flags['OWNDATA']:
+				features_matrix = features_matrix[:lbnds, ...]
+			else:
+				reduced = adjustRows(lbnds, features_matrix)
+				assert reduced, 'features_matrix is expected to be reduced from {} to {} items'.format(allnds, lbnds)
 			embname = os.path.splitext(args.embedding)[0]
 			# COnsider that .nvc embeddings support multiple options on loading and should be retained
 			if embext != '.nvc':
