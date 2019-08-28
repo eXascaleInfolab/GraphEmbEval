@@ -1,5 +1,5 @@
-# GraphEmbeddingEval
-Graph (network) embeddings evaluation sript via the classification.  
+# GraphEmbEval - Graph (Network) Embeddings Evaluation
+Graph (network) embeddings evaluation sript via the classification, gram martix construction for links prediction.  
 This is a significantly modified and extended version of the Python scoring script from the [DeepWalk](https://github.com/phanein/deepwalk/). The extensions include classification using not only the linear regression but also various SVM/SVC kernels, some preprocessing and optimizations implemented using Cython.
 
 Authors (in addition to the authors of the original `DeepWalk`): (c) Artem Lutov <artem@exascale.info>, Dingqi Yang
