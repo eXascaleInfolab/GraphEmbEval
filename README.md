@@ -1,6 +1,3 @@
-`\authors` (c) Artem Lutov <artem@exascale.info>  
-`\license` Apache 2.0, optional commercial support and relicensing is provided by the request  
-
 # GraphEmbeddingEval
 Graph (network) embeddings evaluation sript via the classification.  
 This is a significantly modified and extended version of the Python scoring script from the [DeepWalk](https://github.com/phanein/deepwalk/). The extensions include classification using not only the linear regression but also various SVM/SVC kernels, some preprocessing and optimizations implemented using Cython.
