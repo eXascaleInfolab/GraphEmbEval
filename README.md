@@ -16,6 +16,10 @@ $ ./build.sh
 ```sh
 $ time python3 scoring_classif.py --embeddings embeds/blog.nvc -m cosine -o res/blog.res eval -s liblinear --num-shuffles 3 --network graphs/blog.mat
 ```
+!<--
+$ nohup ./exectime python3 scoring_classif.py -m hamming -o res/daoc.res eval --embedding embeds_daoc/youtube_grv_bsp32_Ssd-bg-g_1067.nvc --network graphs/youtube.mat > res/daoc_youtube_grv_bsp32_Ssd-bg-g_1067_mh.log 2> res/daoc_youtube_grv_bsp32_Ssd-bg-g_1067_mh.err &
+$ ./run.sh -m cosine -a 'deepwalk harp-line' -e 128
+-->
 
 ## Options
 General Options:

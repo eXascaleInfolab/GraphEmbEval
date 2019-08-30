@@ -24,11 +24,13 @@ ALGORITHMS="Deepwalk GraRep harp-deepwalk harp-line HOPE LINE12 netmf Node2vec V
 # Types> LTH_INHMF: int16 (-1, 1); LTH_ITQ/SGH/SH: uint8(0, 1);
 #ALGORITHMS="GraRep"
 GRAPHS="blogcatalog dblp homo wiki youtube"
+# blogcatalog=blog, wiki=pos, homo=ppi
 #GRAPHS=blogcatalog
+GRAM=0  # The number of instances for the GRAM matrices evaluation
 # Max swappiness, should be 1..10 (low swappiness to hold most of data in RAM)
 MAX_SWAP=5
 
-USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [-e <embdims>=${EMBDIMS}]
+USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [--gram <number>] [-e <embdims>=${EMBDIMS}]
   -d,--default  - execute everithing with default arguments
   -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
   -o,--output  - results output file. Default: $OUTP
@@ -36,6 +38,7 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
   -b,--binarize  - binarize embedding by the mean square error
   -a,--algorithms  - evaluationg algorithms. Default: \"$METRICS\"
   -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format
+  --gram  - evaluate gram matrices for the specified number of embeddings instead of the embeddings accuracy
   -e,--emb-dims  - the number of dimensions in the input embeddings (to identify the input embeddings dir as embs<dims>)
   --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format
     
@@ -111,6 +114,19 @@ while [ $1 ]; do
 		echo "Set $1: $2"
 		shift 2
 		;;
+	 --gram)
+		if [ "${2::1}" == "-" ]; then
+			echo "ERROR, invalid argument value of $1: $2"
+			exit 1
+		fi
+		GRAM=$2
+		if [ $? ] || [ $GRAM <= 0 ]; then
+			echo "ERROR, invalid argument value of $1: $2 (positive integer is expected)"
+			exit 1			
+		fi
+		echo "Set $1: $2"  # GRAPHS are used only to identify embedding file names
+		shift 2
+		;;
 	-e|--emb-dims)
 		if [ "${2::1}" == "-" ]; then
 			echo "ERROR, invalid argument value of $1: $2"
@@ -165,4 +181,8 @@ echo "FREEMEM: $FREEMEM"
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
 # embs_{2}_{1}.*  # *: .mat | .nvc
-parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+if [ "$GRAM" -ge "1" ]; then
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: Algorithm ${ALGORITHMS} ::: Metrics ${METRICS} ::: Gram $(seq $GRAM)  # $({1..$GRAM})
+else
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+fi
