@@ -10,6 +10,7 @@
 
 FREEMEM="8G"  # 8G+ for youtube; 5%
 OUTP="res/algs.res"
+GRAMDIR="res/gram"
 ##METRIC=cosine  # cosine, jaccard, hamming
 METRICS="cosine jaccard"  # "cosine jaccard hamming"
 EMBDIMS=128
@@ -167,6 +168,9 @@ echo "GRAPHS: $GRAPHS"
 echo "EMBDIMS: $EMBDIMS"
 echo "EXECLOG: $EXECLOG"
 
+GRAMDIR=${GRAMDIR}$EMBDIMS
+mkdir -p $GRAMDIR
+
 # Check exictence of the requirements
 EXECUTOR=python3
 UTILS="free sed bc parallel ${EXECUTOR}"  # awk
@@ -191,7 +195,7 @@ echo "FREEMEM: $FREEMEM"
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
 # embs_{2}_{1}.*  # *: .mat | .nvc
 if [ "$GRAM" -ge "1" ]; then
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: Algorithm ${ALGORITHMS} ::: Metrics ${METRICS} ::: Gram $(seq $GRAM)  # $({1..$GRAM})
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${GRAMDIR}/gram_{2}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
 else
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: Algorithms ${ALGORITHMS} ::: Metrics ${METRICS}
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTOR} scoring_classif.py -m {3} ${BINARIZE} ${ROOTDIMS} -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
 fi
