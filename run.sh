@@ -36,8 +36,8 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
   -o,--output  - results output file. Default: $OUTP
   -m,--metrics  - metrics used for the gram matrix construction. Default: \"$METRICS\"
   -b,--binarize  - binarize embedding by the mean square error
-  -a,--algorithms  - evaluationg algorithms. Default: \"$METRICS\"
-  -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format
+  -a,--algorithms  - evaluationg algorithms. Default: \"$ALGORITHMS\"
+  -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format. Default: \"$GRAPHS\"
   --gram  - evaluate gram matrices for the specified number of embeddings instead of the embeddings accuracy
   -e,--emb-dims  - the number of dimensions in the input embeddings (to identify the input embeddings dir as embs<dims>)
   --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format
@@ -51,6 +51,13 @@ if [ `cat /proc/sys/vm/swappiness` -gt $MAX_SWAP ]
 then
 	echo "Setting vm.swappiness to $MAX_SWAP..."
 	sudo sysctl -w vm.swappiness=$MAX_SWAP
+fi
+
+if [ "$LC_ALL" = '' ]
+then
+	export LC_ALL="en_US.UTF-8"
+	export LC_CTYPE="en_US.UTF-8"
+	export LANGUAGE="en_US.UTF-8"
 fi
 
 if [ $# -lt 1 ]; then
@@ -152,7 +159,8 @@ while [ $1 ]; do
 	esac
 done
 OUTDIR="$(dirname "$OUTP")"  # Output directory for the executable package
-EXECLOG="$(echo "$OUTP" | cut -f 1 -d '.').log"
+#EXECLOG="$(echo "$OUTP" | cut -f 1 -d '.').log"  # Get first file name in the directory
+EXECLOG="${OUTDIR}/algs.log"
 echo "ALGORITHMS: $ALGORITHMS"
 echo "GRAPHS: $GRAPHS"
 echo "EMBDIMS: $EMBDIMS"
