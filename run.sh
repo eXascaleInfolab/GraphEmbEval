@@ -44,6 +44,7 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
     
   Examples:
   \$ $0 -d
+  \$ $0 -d -a \"daoc-g=1 daoc-gr:=1\" --root-dims --gram 5
   \$ $0 -f 8.5G -o res/algs.res -m cosine -a Deepwalk -g 'dblp wiki'
 "
 
@@ -127,7 +128,7 @@ while [ $1 ]; do
 			exit 1
 		fi
 		GRAM=$2
-		if [ $? ] || [ $GRAM <= 0 ]; then
+		if [ $GRAM -lt 0 ]; then
 			echo "ERROR, invalid argument value of $1: $2 (positive integer is expected)"
 			exit 1			
 		fi

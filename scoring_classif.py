@@ -295,14 +295,17 @@ def evalEmbCls(args):
 	dimwsim = None  # Dimension weights (significance ratios)
 	dimwdis = None  # Dimension weights for the dissimilarity
 
-	# 1.1 Load labels
-	mat = loadmat(args.network)  # Compressed Sparse Column format
-	# A = mat[args.adj_matrix_name]
-	# graph = sparse2graph(A)
-	labels_matrix = mat[args.label_matrix_name]  # csc_matrix
-	labels_count = labels_matrix.shape[1]
-	mlb = MultiLabelBinarizer(range(labels_count))
-	lbnds = labels_matrix.shape[0]  # The number of labeled nodes
+	if args.mode == 'eval':
+		# 1.1 Load labels
+		mat = loadmat(args.network)  # Compressed Sparse Column format
+		# A = mat[args.adj_matrix_name]
+		# graph = sparse2graph(A)
+		labels_matrix = mat[args.label_matrix_name]  # csc_matrix
+		labels_count = labels_matrix.shape[1]
+		mlb = MultiLabelBinarizer(range(labels_count))
+		lbnds = labels_matrix.shape[0]  # The number of labeled nodes
+	else:
+		lbnds = None
 
 	# 1.2 Load Embedding
 	# model = KeyedVectors.load_word2vec_format(args.embedding, binary=False)
@@ -339,7 +342,7 @@ def evalEmbCls(args):
 			rootdims = None
 			print('  reduction of the accessory loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
-		if allnds > lbnds and adjustRows(lbnds, features_matrix):
+		if lbnds and allnds > lbnds and adjustRows(lbnds, features_matrix):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
 				.format(allnds, lbnds), file=sys.stderr)
 		# Omit dissimilarity weighting if required
@@ -384,7 +387,7 @@ def evalEmbCls(args):
 			#raise ValueError('Embedding in the unknown format is specified: ' + args.embedding)
 		allnds = features_matrix.shape[0]
 		# Ensure that the adday can be resized if required (owns it's data ranther than a view)
-		if allnds > lbnds:
+		if lbnds and allnds > lbnds:
 			if isinstance(features_matrix, np.ndarray) and not features_matrix.flags['OWNDATA']:
 				features_matrix = features_matrix[:lbnds, ...]
 			else:
