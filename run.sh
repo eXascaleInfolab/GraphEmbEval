@@ -35,7 +35,7 @@ MAX_SWAP=5
 
 USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [--gram <number>] [-e <embdims>=${EMBDIMS}] [--cls-dims <number>=${CLSDIMS}]
   -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
-  -o,--output  - results output file. Default: $OUTP
+  -o,--output  - output file for the aggregated results on evaluation, execution logs are stored in the same dir. Default: $OUTP
   -m,--metrics  - metrics used for the gram matrix construction. Default: \"$METRICS\"
   -b,--binarize  - binarize embedding by the mean square error
   -a,--algorithms  - evaluationg algorithms. Default: \"$ALGORITHMS\"
@@ -202,10 +202,10 @@ fi
 echo "FREEMEM: $FREEMEM"
 
 # Set CLSDIMS to EMBDIMS if required
-#SUFDIMS=''
+SUFDIMS=''
 if [ "$CLSDIMS" != "" ]; then
 	CLSDIMS="-d $EMBDIMS"
-	#SUFDIMS="-d${EMBDIMS}"
+	SUFDIMS="-d${EMBDIMS}"
 fi
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
@@ -215,7 +215,7 @@ if [ "$GRAM" -ge "1" ]; then
 	echo "GRAMDIR: $GRAMDIR"
 	mkdir -p $GRAMDIR
 
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${GRAMDIR}/gram_{2}-m${METRMARK[{3}]}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${GRAMDIR}/gram_{2}${SUFDIMS}-m${METRMARK[{3}]}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
 else
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}-m${METRMARK[{3}]}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}${SUFDIMS}-m${METRMARK[{3}]}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
 fi

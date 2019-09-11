@@ -347,6 +347,8 @@ def evalEmbCls(args):
 				# Sort by increasing density step and then number of nodes
 				rdmin = min(dimrds)
 				drds.sort(key=lambda x: x[1] + x[2] / features_matrix.shape[0] * rdmin)
+				# print('drds: ', drds[:5], '..', drds[-5:])
+				# print('rootdims: ', [(i, dimnds[i]) for i in rootdims[:5]], '..', [(i, dimnds[i]) for i in rootdims[-5:]])
 				droot = set(rootdims)
 				for j in range(rootdims.size, args.dims):
 					idim = drds.pop()[0]
