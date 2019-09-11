@@ -343,8 +343,10 @@ def evalEmbCls(args):
 			resdims[:rootdims.size] = rootdims
 			if args.dims > rootdims.size:
 				# Fill remained dimensions with the ones having max density step and not belongning to the root
-				drds = [(i, d) for i, d in enumerate(dimrds)]
-				drds.sort(key=lambda x: x[1])
+				drds = [(i, d, dimnds[i]) for i, d in enumerate(dimrds)]
+				# Sort by increasing density step and then number of nodes
+				rdmin = min(dimrds)
+				drds.sort(key=lambda x: x[1] + x[2] / features_matrix.shape[0] * rdmin)
 				droot = set(rootdims)
 				for j in range(rootdims.size, args.dims):
 					idim = drds.pop()[0]
