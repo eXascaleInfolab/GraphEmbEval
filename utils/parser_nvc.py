@@ -9,6 +9,7 @@
 """
 from __future__ import print_function, division  # Required for stderr output, must be the first import
 from scipy.sparse import dok_matrix  #, coo_matrix
+from math import sqrt
 import numpy as np
 import sys
 
@@ -25,6 +26,7 @@ def loadNvc(nvcfile):
 		dimrws: array(float32)  - ratios of dimension (cluster) weight step relative to the possibly indirect super cluster, typically <= 1
 		dimwsim: array(float32)  - dimensions weights for the similarity or None
 		dimwdis: array(float32)  - dimensions weights for the dissimilarity or None
+		dimnds: array(uint32)  - dimensions members (nodes) number
 	"""
 	hdr = False  # Whether the header is parsed
 	ftr = False # Whether the footer is parsed
@@ -37,6 +39,7 @@ def loadNvc(nvcfile):
 	dimrws = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically <= 1
 	dimwsim = None  # Dimension weights for the similarity
 	dimwdis = None  # Dimension weights for the dissimilarity
+	dimnds = None  # Dimension nodes number
 	COMPR_NONE = 0
 	COMPR_RLE = 1
 	COMPR_SPARSE = 2
@@ -131,8 +134,15 @@ def loadNvc(nvcfile):
 						# [Diminfo> <cl0_id>[#<cl0_levid>][%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!] ...
 						# A possible value: 482716#2%1.16899/9.1268E-05:0.793701-0.114708
 						vals = ln[1:].split(None, 1)
-						if not vals or vals[0].lower() != 'diminfo>':
+						if not vals or not vals[0].lower().startswith('diminfo'):
 							continue
+						levsnum = 0
+						if vals[0][-1] == '|':
+							vals = vals[1].split('>', 1)
+							dimsopts = vals[0].strip().lower()
+							hdrln = 'levsnum:'
+							if dimsopts.startswith(hdrln):
+								levsnum = int(dimsopts[len(hdrln):])
 						ftr = True
 						if len(vals) <= 1:
 							continue
@@ -158,11 +168,26 @@ def loadNvc(nvcfile):
 								pos = pos2
 								dimwsim = np.empty(dimnum, np.float32)
 								parts.append((':', dimwsim))
-							pos = vals[0].find('-', pos) + 1
+								# Note: dimwdis is not parsed wihtout the dimwsim
+								pos2 = vals[0].find('-', pos) + 1
+								if pos2 != 0:
+									pos = pos2
+									dimwdis = np.empty(dimnum, np.float32)
+									parts.append(('-', dimwsim))
+							pos = vals[0].find('=', pos) + 1
 							if pos != 0:
-								dimwdis = np.empty(dimnum, np.float32)
-								parts.append(('-', dimwdis))
+								dimnds = np.empty(dimnum, np.uint32)
+								parts.append(('=', dimnds))
+								evalws = dimwsim is None
+								if evalws:
+									dimwsim = np.empty(dimnum, np.float32)
+								evalwd = dimwdis is None
+								if evalwd:
+									dimwdis = np.empty(dimnum, np.float32)
+								if (evalws or evalwd) and not levsnum:
+									raise ValueError('levsnum should be specified in the Diminfo to evaluate dis/similarity')
 
+						# Note: dimnds alone is meaningful and can be omitted
 						if dimrds is None and dimrws is None and dimwsim is None and dimwdis is None and rootdims is None:
 							continue
 						ird = 0  # Index in the rootdims array
@@ -172,11 +197,17 @@ def loadNvc(nvcfile):
 								rootdims[ird] = iv
 								ird += 1
 								v = v[:-1]
-							# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]]
+							# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][=<nds_num>]
 							ibeg = v.find(parts[0][0])
 							for ipt, pt in enumerate(parts):
 								iend = None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg + 1)
 								pt[1][iv] = v[ibeg + 1 : iend]
+								if pt[0] == '=':
+									ilev = pt[1][iv]
+									if evalws:
+										dimwsim[iv] = pow(ilev, -1 / 3)  # desrank = ilev = pt[1][iv], ilev >= 1
+									if evalwd:
+										dimwdis[iv] = 1 / sqrt((levsnum - ilev) + 1)  # orank = levsnum - ilev
 								ibeg = iend
 						assert rootdims is None or ird == len(rootdims), ('Rootdims formation validation failed'
 							', rootdims: {}, idr: {} / {}'.format(rootdims is not None, ird, len(rootdims)))
@@ -265,4 +296,4 @@ def loadNvc(nvcfile):
 		dimnum == irow
 	#print('nvec:\n', nvec, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
 	# Return node vecctors matrix in the Dictionary Of Keys based sparse format and dimension weights
-	return nvec, rootdims, dimrds, dimrws, dimwsim, dimwdis  # nvec.tocsc() - Compressed Sparse Column format
+	return nvec, rootdims, dimrds, dimrws, dimwsim, dimwdis, dimnds  # nvec.tocsc() - Compressed Sparse Column format

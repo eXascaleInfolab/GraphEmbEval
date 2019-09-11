@@ -294,6 +294,7 @@ def evalEmbCls(args):
 	dimrws = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically <= 1
 	dimwsim = None  # Dimension weights (significance ratios)
 	dimwdis = None  # Dimension weights for the dissimilarity
+	dimnds = None  # Dimensions members (nodes) number
 
 	if args.mode == 'eval':
 		# 1.1 Load labels
@@ -314,7 +315,7 @@ def evalEmbCls(args):
 	embext = os.path.splitext(args.embedding)[1].lower()
 	if embext == '.nvc':
 		tld0 = time.clock()
-		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis = loadNvc(args.embedding)
+		features_matrix, rootdims, dimrds, dimrws, dimwsim, dimwdis, dimnds = loadNvc(args.embedding)
 		tldf = time.clock()
 		print('Feature matrix loaded on {} sec'.format(int(tldf - tld0)))
 		# Cut loaded data to rootdims if required
