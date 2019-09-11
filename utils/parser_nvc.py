@@ -178,14 +178,14 @@ def loadNvc(nvcfile):
 							if pos != 0:
 								dimnds = np.empty(dimnum, np.uint32)
 								parts.append(('=', dimnds))
-								evalws = dimwsim is None
-								if evalws:
+								# ATTENTION: Evalaute only in case both dis and similarity have not been specifeid
+								# to be consistent (the specified values could be evaluated differently)
+								evalsims = dimwsim is None and dimwdis is None
+								if evalsims:
+									if not levsnum:
+										raise ValueError('levsnum should be specified in the Diminfo to evaluate dis/similarity')
 									dimwsim = np.empty(dimnum, np.float32)
-								evalwd = dimwdis is None
-								if evalwd:
 									dimwdis = np.empty(dimnum, np.float32)
-								if (evalws or evalwd) and not levsnum:
-									raise ValueError('levsnum should be specified in the Diminfo to evaluate dis/similarity')
 
 						# Note: dimnds alone is meaningful and can be omitted
 						if dimrds is None and dimrws is None and dimwsim is None and dimwdis is None and rootdims is None:
@@ -204,9 +204,8 @@ def loadNvc(nvcfile):
 								pt[1][iv] = v[ibeg + 1 : iend]
 								if pt[0] == '=':
 									ilev = pt[1][iv]
-									if evalws:
+									if evalsims:
 										dimwsim[iv] = pow(ilev, -1 / 3)  # desrank = ilev = pt[1][iv], ilev >= 1
-									if evalwd:
 										dimwdis[iv] = 1 / sqrt((levsnum - ilev) + 1)  # orank = levsnum - ilev
 								ibeg = iend
 						assert rootdims is None or ird == len(rootdims), ('Rootdims formation validation failed'
