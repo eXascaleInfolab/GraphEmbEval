@@ -1,7 +1,18 @@
+# Custom dirs
+orig/
+papers/
+res/
+
 # Custom files
 *.png
 *.jpg
 *.zip
+*.old
+*.bck
+*.orig
+
+# Cython generated files
+*.c
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

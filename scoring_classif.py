@@ -10,7 +10,7 @@
 """
 from __future__ import print_function, division  # Required for stderr output, must be the first import
 from utils.parser_nvc import loadNvc  #pylint: disable=E0611,E0401
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, SUPPRESS as arg_SUPPRESS
 # from collections import defaultdict
 # from gensim.models import Word2Vec, KeyedVectors
 from sklearn.multiclass import OneVsRestClassifier
@@ -126,7 +126,9 @@ def parseArgs(opts=None):
 						help='Apply dimension weights if specified (applicable only for the NVC format).')
 	parser.add_argument("--no-dissim", default=False, action='store_true',
 						help='Omit dissimilarity weighting (if weights are specified at all).')
-	parser.add_argument("--root-dims", default=False, dest='rdims', action='store_true', help='Use only root (top) level dimensions (clusers), actual only for the NVC format.')
+	parser.add_argument("-d", "--dimensions", default=None, type=int, dest='dims', help='Use only the specified number of dimensions (clusers) bounded with [root_dims, total_dims].'
+						' Out of range values are automatically adjusted to the bound. Actual only for the NVC format.')
+	parser.add_argument("--root-dims", default=False, dest='rdims', action='store_true', help=arg_SUPPRESS) # Deprecated; 'Use only root (top) level dimensions (clusers), actual only for the NVC format. Same as "--dimensions 1"'
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1).')
 	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
 	parser.add_argument("-b", "--binarize", default=False, action='store_true', help='Binarize the embedding minimizing the Mean Square Error.'
@@ -320,27 +322,52 @@ def evalEmbCls(args):
 		print('Feature matrix loaded on {} sec'.format(int(tldf - tld0)))
 		# Cut loaded data to rootdims if required
 		if args.rdims:
-			print('Reduction to the root dimensions started at {} sec'.format(int(tldf)))
-			# Cut the features_matrix to rootdims
-			fm = dok_matrix((features_matrix.shape[0], rootdims.size), dtype=features_matrix.dtype)
-			for j, ir in enumerate(rootdims):
-				fm[:, j] = features_matrix.getcol(ir)
+			if args.dims is None:
+				args.dims = 1  # or anything else <= len(rootdims)
+			else:
+				raise ValueError('Exclusive options --dimensions and --root-dims are specified')
+		if args.dims is not None:  #rdims
+			if args.dims < rootdims.size:
+				args.dims = rootdims.size
+			if args.dims > features_matrix.shape[1]:
+				args.dims = features_matrix.shape[1]
+			print('Reduction to the {} dimensions E [{}, {}] started at {} sec'
+				.format(args.dims, rootdims.size, features_matrix.shape[1], int(tldf)))
+			# Cut the features_matrix to args.dims E rootdims .. totaldims
+			fm = dok_matrix((features_matrix.shape[0], args.dims), dtype=features_matrix.dtype)
+			# First, fill the root dims
+			for j, idim in enumerate(rootdims):
+				fm[:, j] = features_matrix.getcol(idim)
 				# print('> colmat type: {}, shape: {}, attrs: {}'.format(type(colmat), colmat.shape, dir(colmat)))
+			resdims = np.empty(args.dims, np.uint16)  # rootdims
+			resdims[:rootdims.size] = rootdims
+			if args.dims > rootdims.size:
+				# Fill remained dimensions with the ones having max density step and not belongning to the root
+				drds = [(i, d) for i, d in enumerate(dimrds)]
+				drds.sort(key=lambda x: x[1])
+				droot = set(rootdims)
+				for j in range(rootdims.size, args.dims):
+					idim = drds.pop()[0]
+					while idim in droot:
+						idim = drds.pop()[0]
+					resdims[j] = idim
+					fm[:, j] = features_matrix.getcol(idim)
+			rootdims = None
 			features_matrix = fm
 			del fm
 			trd1 = time.clock()
-			print('  features_matrix reduction completed on {} sec'.format(int(trd1 - tldf)))
+			print('  features_matrix reduction completed within {} sec'.format(int(trd1 - tldf)))
 			# Cut the accessory arrays to rootdims
 			arrs = [dimrds, dimrws, dimwsim, dimwdis]
 			for ia, arr in enumerate(arrs):
 				# Omit None arrays
 				if arr is None:
 					continue
-				tarr = np.zeros(rootdims.size, arr.dtype)
-				for i, ir in enumerate(rootdims):
+				tarr = np.empty(resdims.size, arr.dtype)
+				for i, ir in enumerate(resdims):
 					tarr[i] = arr[ir]
 				arrs[ia] = tarr
-			rootdims = None
+			resdims = None
 			print('  reduction of the accessory loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
 		if lbnds and allnds > lbnds and adjustRows(lbnds, features_matrix):

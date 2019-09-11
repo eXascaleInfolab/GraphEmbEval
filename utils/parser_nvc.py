@@ -35,11 +35,6 @@ def loadNvc(nvcfile):
 	rootdnum = 0  # The number of root dimensions (reprsentative clusters)
 	numbered = False
 	rootdims = None  # Indices of the root dimensions
-	dimrds = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically >= 1
-	dimrws = None  # Dimension density ratios relative to the possibly indirect super cluster (dimension), typically <= 1
-	dimwsim = None  # Dimension weights for the similarity
-	dimwdis = None  # Dimension weights for the dissimilarity
-	dimnds = None  # Dimension nodes number
 	COMPR_NONE = 0
 	COMPR_RLE = 1
 	COMPR_SPARSE = 2
@@ -134,7 +129,8 @@ def loadNvc(nvcfile):
 						# [Diminfo> <cl0_id>[#<cl0_levid>][%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!] ...
 						# A possible value: 482716#2%1.16899/9.1268E-05:0.793701-0.114708
 						vals = ln[1:].split(None, 1)
-						if not vals or not vals[0].lower().startswith('diminfo'):
+						if (not vals or not vals[0].lower().startswith('diminfo')
+						or len(vals[0]) <= len('diminfo') or vals[0][len('diminfo')] not in '|>'):  # Diminfo| or Diminfo>
 							continue
 						levsnum = 0
 						if vals[0][-1] == '|':
@@ -151,45 +147,46 @@ def loadNvc(nvcfile):
 						if rootdnum:
 							rootdims = np.empty(rootdnum, np.uint16)
 
-						# [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!]
+						# [#<cl0_levid>][%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][!]
+						dimlev = None
 						parts = []  # Parsing parts
 						if dimnum:
-							pos = vals[0].find('%') + 1
+							sep = '#'
+							pos = vals[0].find(sep) + 1
 							if pos != 0:
-								dimrds = np.empty(dimnum, np.float32)
-								parts.append(('%', dimrds))
-							pos2 = vals[0].find('/', pos) + 1
-							if pos2 != 0:
-								pos = pos2
-								dimrws = np.empty(dimnum, np.float32)
-								parts.append(('/', dimrws))
-							pos2 = vals[0].find(':', pos) + 1
-							if pos2 != 0:
-								pos = pos2
-								dimwsim = np.empty(dimnum, np.float32)
-								parts.append((':', dimwsim))
+								dimlev = np.empty(dimnum, np.uint16)
+								parts.append((sep, dimlev))
+							dimhdrs = '%/:-'
+							mwsim = ':'
+							mwdis = '-'
+							for sep in dimhdrs:  # dimrds, dimrws, dimwsim, dimwdis
 								# Note: dimwdis is not parsed wihtout the dimwsim
-								pos2 = vals[0].find('-', pos) + 1
+								if sep == mwdis and parts[-1][1] is not None:
+									assert parts[-1][0] == mwsim, 'dimwdis should not be parsed wihtout the dimwsim'
+									parts.append([sep, None])
+									continue
+								pos2 = vals[0].find(sep, pos) + 1
 								if pos2 != 0:
 									pos = pos2
-									dimwdis = np.empty(dimnum, np.float32)
-									parts.append(('-', dimwsim))
-							pos = vals[0].find('=', pos) + 1
+									parts.append((sep, np.empty(dimnum, np.float32)))
+								else:
+									parts.append([sep, None])
+							sep = '='
+							pos = vals[0].find(sep, pos) + 1
 							if pos != 0:
-								dimnds = np.empty(dimnum, np.uint32)
-								parts.append(('=', dimnds))
+								parts.append((sep, np.empty(dimnum, np.uint32)))  # dimnds
 								# ATTENTION: Evalaute only in case both dis and similarity have not been specifeid
 								# to be consistent (the specified values could be evaluated differently)
-								evalsims = dimwsim is None and dimwdis is None
+								evalsims = parts[dimhdrs.index(mwsim)][1] is None and parts[dimhdrs.index(mwdis)][1] is None
 								if evalsims:
-									if not levsnum:
-										raise ValueError('levsnum should be specified in the Diminfo to evaluate dis/similarity')
+									if not levsnum or dimlev is None:
+										raise ValueError('levsnum and #levid should be specified in the Diminfo to evaluate dis/similarity')
 									dimwsim = np.empty(dimnum, np.float32)
+									parts[dimhdrs.index(mwsim)][1] = dimwsim
 									dimwdis = np.empty(dimnum, np.float32)
+									parts[dimhdrs.index(mwdis)][1] = dimwdis
 
-						# Note: dimnds alone is meaningful and can be omitted
-						if dimrds is None and dimrws is None and dimwsim is None and dimwdis is None and rootdims is None:
-							continue
+						# Form indices of the root dims
 						ird = 0  # Index in the rootdims array
 						for iv, v in enumerate(vals):
 							# Fetch root indices
@@ -200,10 +197,15 @@ def loadNvc(nvcfile):
 							# Parse the fragment: [%<cl0_rdens>][/<cl0_rweight>][:<cl0_wsim>[-<cl0_wdis>]][=<nds_num>]
 							ibeg = v.find(parts[0][0])
 							for ipt, pt in enumerate(parts):
-								iend = None if ipt + 1 == len(parts) else v.find(parts[ipt + 1][0], ibeg + 1)
+								if pt[1] is None:
+									continue
+								iptn = ipt + 1
+								while iptn < len(parts) and parts[iptn][1] is None:
+									iptn += 1
+								iend = None if iptn == len(parts) else v.find(parts[iptn][0], ibeg + 1)
 								pt[1][iv] = v[ibeg + 1 : iend]
 								if pt[0] == '=':
-									ilev = pt[1][iv]
+									ilev = dimlev[iv]
 									if evalsims:
 										dimwsim[iv] = pow(ilev, -1 / 3)  # desrank = ilev = pt[1][iv], ilev >= 1
 										dimwdis[iv] = 1 / sqrt((levsnum - ilev) + 1)  # orank = levsnum - ilev
@@ -287,12 +289,13 @@ def loadNvc(nvcfile):
 		raise
 
 	assert not dimnum or dimnum == irow, 'The parsed number of dimensions is invalid'
-	assert dimwsim is None or dimwdis is None or len(dimwsim) == len(dimwdis
-		), 'Parsed dimension weights are not synchronized'
-
 	# Omit empty dimensions
 	if dimnum != irow:
 		dimnum == irow
 	#print('nvec:\n', nvec, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
 	# Return node vecctors matrix in the Dictionary Of Keys based sparse format and dimension weights
+	# assert len(parts) == 4, 'Parts should represent: dimrds, dimrws, dimwsim, dimwdis'
+	_, dimrds, dimrws, dimwsim, dimwdis, dimnds = (p[1] for p in parts)  # _ is dimlev
+	assert dimwsim is None or dimwdis is None or len(dimwsim) == len(dimwdis), (
+		'Parsed dimension weights are not synchronized')
 	return nvec, rootdims, dimrds, dimrws, dimwsim, dimwdis, dimnds  # nvec.tocsc() - Compressed Sparse Column format
