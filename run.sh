@@ -215,7 +215,8 @@ if [ "$GRAM" -ge "1" ]; then
 	echo "GRAMDIR: $GRAMDIR"
 	mkdir -p $GRAMDIR
 
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${GRAMDIR}/gram_{2}${SUFDIMS}-m${METRMARK[{3}]}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${GRAMDIR}/gram_{2}${SUFDIMS}-{3}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
 else
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}${SUFDIMS}-m${METRMARK[{3}]}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}${SUFDIMS}-{3}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
 fi
+# Note: ${METRMARK[{3}]} yields an error
