@@ -8,7 +8,7 @@
 # Note: Uses the benchmarking is based on the GNU Parallel, paper:
 # O. Tange (2011): GNU Parallel - The Command-Line Power Tool, USENIX Magazine, February 2011:42-47.
 
-FREEMEM="8G"  # 8G+ for youtube; 5%
+FREEMEM="8G"  # >= 8G for youtube; 5%
 OUTP="res/algs.res"
 GRAMDIR="res/gram"
 ##METRIC=cosine  # cosine, jaccard, hamming
@@ -33,8 +33,7 @@ GRAM=0  # The number of instances for the GRAM matrices evaluation
 # Max swappiness, should be 1..10 (low swappiness to hold most of data in RAM)
 MAX_SWAP=5
 
-USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [--gram <number>] [-e <embdims>=${EMBDIMS}] [--cls-dims <number>=${CLSDIMS}]
-  -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
+USAGE="$0 -h | [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \"+] [-a \"{`echo $ALGORITHMS | tr ' ' ','`} \"+] [-g \"{`echo $GRAPHS | tr ' ' ','`} \"+] [--gram <number>] [-e <embdims>=${EMBDIMS}] [--force-dims] [-f <min_available_RAM>]
   -o,--output  - output file for the aggregated results on evaluation, execution logs are stored in the same dir. Default: $OUTP
   -m,--metrics  - metrics used for the gram matrix construction. Default: \"$METRICS\"
   -b,--binarize  - binarize embedding by the mean square error
@@ -43,27 +42,15 @@ USAGE="$0 -a | [-f <min_available_RAM>] [-o <output>=res/algs.res] [-m \"{`echo 
   --gram  - evaluate gram matrices for the specified number of embeddings instead of the embeddings accuracy, 0 disables the gram mode
   -e,--emb-dims  - the number of dimensions in the input embeddings or any identifier to select the embeddings filename and load from the dir embs<dims>. Default: $EMBDIMS
   --force-dims  - force the number of cluster-based dimensions to the specified --emb-dims bounding with [root-cls, total-cls]. The out of range value is adjusted to the actual bound, so <=1 means output only the root clusters as dimensions. Actual only for the NVC format
-    
+  -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
+  -h,--help  - help, show this usage description
+
   Examples:
   \$ $0 -a \"daoc-g=1 daoc-gr:=1\" --force-dims --gram 5
   \$ $0 -f 8.5G -o res/algs.res -m cosine -a Deepwalk -g 'dblp wiki'
   \$ $0 -m jaccard -a 'daoc-gr:=1' --force-dims -e 128 -g 'blogcatalog dblp homo wiki' --gram 
 "
 #  -d,--default  - execute everithing with default arguments
-#  --root-dims  - evaluate embedding only for the root dimensions (clusters), actual only for the NVC format, same as '--cls-dims 0'
-
-if [ `cat /proc/sys/vm/swappiness` -gt $MAX_SWAP ]
-then
-	echo "Setting vm.swappiness to $MAX_SWAP..."
-	sudo sysctl -w vm.swappiness=$MAX_SWAP
-fi
-
-if [ "$LC_ALL" = '' ]  # Note: "" = '' => True
-then
-	export LC_ALL="en_US.UTF-8"
-	export LC_CTYPE="en_US.UTF-8"
-	export LANGUAGE="en_US.UTF-8"
-fi
 
 if [ $# -lt 1 ]; then
 	echo -e "Usage: $USAGE"  # -e to interpret correctly '\n'
@@ -72,19 +59,15 @@ fi
 
 while [ $1 ]; do
 	case $1 in
-	-d|--default)
+	-h|--help)
 		# Use defaults for the remained parameters
-		break
+		echo -e $USAGE # -e to interpret '\n'
+		exit 0
 		;;
-	-f|--free-mem)
-		if [ "${2::1}" = "-" ]; then
-			echo "ERROR, invalid argument value of $1: $2"
-			exit 1
-		fi
-		FREEMEM=$2
-		echo "Set $1: $2"
-		shift 2
-		;;
+#	-d|--default)
+#		# Use defaults for the remained parameters
+#		break
+#		;;
 	-o|--output)
 		if [ "${2::1}" = "-" ]; then
 			echo "ERROR, invalid argument value of $1: $2"
@@ -153,12 +136,15 @@ while [ $1 ]; do
 		echo "Set $1"
 		shift
 		;;
-#	 --root-dims)
-#		CLSDIMS=0
-#		ROOTDIMS=$1
-#		echo "Set ROOTDIMS: $ROOTDIMS"
-#		shift
-#		;;
+	-f|--free-mem)
+		if [ "${2::1}" = "-" ]; then
+			echo "ERROR, invalid argument value of $1: $2"
+			exit 1
+		fi
+		FREEMEM=$2
+		echo "Set $1: $2"
+		shift 2
+		;;
 #	-*)
 #		printf "Error: Invalid option specified.\n\n$USAGE"
 #		exit 1
@@ -179,6 +165,19 @@ echo "EMBDIMS: $EMBDIMS"
 #echo "CLSDIMS: $CLSDIMS"
 echo "EXECLOG: $EXECLOG"
 
+if [ `cat /proc/sys/vm/swappiness` -gt $MAX_SWAP ]
+then
+	echo "Setting vm.swappiness to $MAX_SWAP (Ctrl+C to omit)..."
+	sudo sysctl -w vm.swappiness=$MAX_SWAP
+fi
+
+if [ "$LC_ALL" = '' ]  # Note: "" = '' => True
+then
+	export LC_ALL="en_US.UTF-8"
+	export LC_CTYPE="en_US.UTF-8"
+	export LANGUAGE="en_US.UTF-8"
+fi
+
 # Check exictence of the requirements
 EXECUTOR=python3  # pypy3
 EXECUTORX="$EXECUTOR -O"  # Executor with options
@@ -192,15 +191,36 @@ for UT in $UTILS; do
 	fi
 done
 
+#TOTMEM=`free | sed -rn 's;^Mem:\s+([0-9]+).*;\1;p'`
 if [ "${FREEMEM:(-1)}" = "%" ]; then
 	# Remove the percent sign and evaluate the absolute value from the available RAM
 	#FREEMEM=${FREEMEM/%%/}
 	#FREEMEM=${FREEMEM::-1}
 	#FREEMEM=`free | awk '/^Mem:/{print $2"*1/100"}' | bc` # - total amount of memory (1%); 10G
+	# free -m | grep -m 1 -oP '\d+' | head -n 1
 	FREEMEM=`free | sed -rn "s;^Mem:\s+([0-9]+).*;\1*${FREEMEM::-1}/100;p" | bc`
+	#FREEMEM=`echo "${TOTMEM}*${FREEMEM::-1}/100" | bc`
 fi
 echo "FREEMEM: $FREEMEM"
 
+## Ensure that the specified number is lower than the total RAM
+#case ${FREEMEM:-1} in
+#G|g)
+	## Use defaults for the remained parameters
+	#FREEMEM=`echo ${FREEMEM::-1}*1024*1024*1024 | bc`
+	#;;
+#M|m)
+	#FREEMEM=`echo ${FREEMEM::-1}*1024*1024 | bc`
+	#;;
+#K|k)
+	#FREEMEM=`echo ${FREEMEM::-1}*1024 | bc`
+	#;;
+#esac
+#if [ $FREEMEM -lt $TOTMEM ]; then
+	#echo 'The specified FREEMEM ($FREEMEM) is larger that the total available RAM ($TOTMEM)'
+	#exit 1
+#fi
+	
 # Set CLSDIMS to EMBDIMS if required
 SUFDIMS=''
 if [ "$CLSDIMS" != "" ]; then
@@ -210,13 +230,15 @@ fi
 
 #echo "> ALGORITHMS: ${ALGORITHMS}, FREEMEM: $FREEMEM"
 # embs_{2}_{1}.*  # *: .mat | .nvc
+echo -e "\n\nStarting the evaluations giving the FREEMEM=${FREEMEM}...\n"
 if [ "$GRAM" -ge "1" ]; then
 	GRAMDIR=${GRAMDIR}$EMBDIMS
 	echo "GRAMDIR: $GRAMDIR"
 	mkdir -p $GRAMDIR
 
+	# Note: parallel '--plus' can can be used for the advanced parameter substitution
 	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3}_{4} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${GRAMDIR}/gram_{2}${SUFDIMS}-{3}_{1}{4}.mat" gram --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}{4}.* ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS} ::: gram $(seq $GRAM)  # $({1..$GRAM})
 else
-	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --plus --tagstring {2}${SUFDIMS}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}${SUFDIMS}-{3}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
+	parallel --header : --results "$OUTDIR" --joblog "$EXECLOG" --bar --tagstring {2}${SUFDIMS}_{1}_{3} --verbose --noswap --memfree ${FREEMEM} --load 96% ${EXECUTORX} scoring_classif.py -m {3} $BINARIZE $CLSDIMS -o "${OUTP}" eval --embedding embeds/embs${EMBDIMS}/embs_{2}_{1}.* --network graphs/{1}.mat ::: Graphs ${GRAPHS} ::: algs ${ALGORITHMS} ::: metrics ${METRICS}
 fi
 # Note: ${METRMARK[{3}]} yields an error
