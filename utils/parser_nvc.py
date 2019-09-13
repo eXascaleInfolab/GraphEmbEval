@@ -161,7 +161,7 @@ def loadNvc(nvcfile):
 							mwdis = '-'
 							for sep in dimhdrs:  # dimrds, dimrws, dimwsim, dimwdis
 								# Note: dimwdis is not parsed wihtout the dimwsim
-								if sep == mwdis and parts[-1][1] is not None:
+								if sep == mwdis and parts[-1][1] is None:
 									assert parts[-1][0] == mwsim, 'dimwdis should not be parsed wihtout the dimwsim'
 									parts.append([sep, None])
 									continue
@@ -203,6 +203,7 @@ def loadNvc(nvcfile):
 								while iptn < len(parts) and parts[iptn][1] is None:
 									iptn += 1
 								iend = None if iptn == len(parts) else v.find(parts[iptn][0], ibeg + 1)
+								assert iend is None or iend >= 1, 'iend is invalid'
 								pt[1][iv] = v[ibeg + 1 : iend]
 								if pt[0] == '=':
 									ilev = dimlev[iv]
@@ -295,7 +296,12 @@ def loadNvc(nvcfile):
 	#print('nvec:\n', nvec, '\ndimwsim:\n', dimwsim, '\ndimwdis:\n', dimwdis)
 	# Return node vecctors matrix in the Dictionary Of Keys based sparse format and dimension weights
 	# assert len(parts) == 4, 'Parts should represent: dimrds, dimrws, dimwsim, dimwdis'
-	_, dimrds, dimrws, dimwsim, dimwdis, dimnds = (p[1] for p in parts)  # _ is dimlev
+	# _, dimrds, dimrws, dimwsim, dimwdis, dimnds = (p[1] for p in parts)  # _ is dimlev
+	parts.pop(0)  # Remove dimlev
+	# Fill remained values with None (consider the deprecated format lacking dimnds)
+	while len(parts) < 5:
+		parts.push(None)
+	dimrds, dimrws, dimwsim, dimwdis, dimnds = (p[1] for p in parts)
 	assert dimwsim is None or dimwdis is None or len(dimwsim) == len(dimwdis), (
 		'Parsed dimension weights are not synchronized')
 	return nvec, rootdims, dimrds, dimrws, dimwsim, dimwdis, dimnds  # nvec.tocsc() - Compressed Sparse Column format
