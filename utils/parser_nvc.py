@@ -300,7 +300,7 @@ def loadNvc(nvcfile):
 	parts.pop(0)  # Remove dimlev
 	# Fill remained values with None (consider the deprecated format lacking dimnds)
 	while len(parts) < 5:
-		parts.push(None)
+		parts.append(None)
 	dimrds, dimrws, dimwsim, dimwdis, dimnds = (p[1] for p in parts)
 	assert dimwsim is None or dimwdis is None or len(dimwsim) == len(dimwdis), (
 		'Parsed dimension weights are not synchronized')
