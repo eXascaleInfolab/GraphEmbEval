@@ -130,7 +130,8 @@ def parseArgs(opts=None):
 						' Out of range values are automatically adjusted to the bound. Actual only for the NVC format.')
 	parser.add_argument("--root-dims", default=False, dest='rdims', action='store_true', help=arg_SUPPRESS) # Deprecated; 'Use only root (top) level dimensions (clusers), actual only for the NVC format. Same as "--dimensions 1"'
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1).')
-	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
+	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming'
+						', jacnop (jaccard normalized probabilistic).')
 	parser.add_argument("-b", "--binarize", default=False, action='store_true', help='Binarize the embedding minimizing the Mean Square Error.'
 						' NOTE: the median binarizaion is performed if the hamming metric is specified with this flag.')
 	parser.add_argument("-o", "--output", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')
@@ -167,7 +168,7 @@ def parseArgs(opts=None):
 
 	assert 0 <= args.dim_vmin < 1, 'dim_vmin is out of range'
 	assert args.num_shuffles >= 1, 'num_shuffles is out of range'
-	assert args.metric in ('cosine', 'jaccard', 'hamming'), 'Unexpexted metric'
+	assert args.metric in ('cosine', 'jaccard', 'hamming', 'jacnop'), 'Unexpexted metric'
 	if args.weighted_dims and not args.no_dissim and (args.mode != 'eval' or args.kernel != "precomputed"):
 		print('WARNING, dimension no_dissim is automatically set since the dissimilarity weighting'
 			' can be considered only for the "precomputed" kernel')
@@ -196,6 +197,23 @@ def dist_jaccard(u, v):
 	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
 	if res != 0:
 		res = np.minimum(u, v).sum() / res
+	else:
+		res = pow(0.25, u.size)
+	return 1 - res
+
+
+def dist_jacnop(u, v):
+	"""Weighted Jaccard Normalized Probabilistic distance metric
+
+	PREREQUISITES: the input vectors are normalized so as max(abs(x)) = 1 for each item x
+	"""
+	# Evalaute denominator
+	norm = np.maximum(u, v)
+	res = norm.sum()
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: pow(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
+	if res != 0:
+		res = np.multiply(np.minimum(u, v), norm).sum() / res  # Element-wise multiplication to norm = value confidence
 	else:
 		res = pow(0.25, u.size)
 	return 1 - res
@@ -243,11 +261,12 @@ def pairsimdis(features, dis_features, metric, dis_metric):
 	return squareform(sims)
 
 
-def adjustRows(num, *mats):
+def adjustRows(num, *mats, traceTime=False):
 	"""Adjust the number of rows (1st dimension) of the specified matrices
 
 	num: uint  - the required number of rows
 	mats: iterable(MultiDimArray)  - multidimentional matrices or NumPy arrays with C ordering to be adjusted
+	traceTime: bool  - perform time tracing
 
 	return res: bool  - the matrices are reduced or the reduction was not necessary
 
@@ -278,7 +297,8 @@ def adjustRows(num, *mats):
 			#except ValueError:  # An error may occure in case of the container (array, matrix) does not own its data
 			#	mats[i] = mt[:num, ...]  # Note: *mats is interpreted as a tuble and can't be assigned
 			reduced = True
-	print('The {} matrices reduciton to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
+	if traceTime:
+		print('The {} matrices reduction to {} rows is performed on {} sec'.format(len(mats), num, int(time.clock() - tstart)))
 	return reduced
 
 
@@ -374,7 +394,7 @@ def evalEmbCls(args):
 			resdims = None
 			print('  reduction of the accessory loaded data completed on {} sec'.format(int(time.clock() - trd1)))
 		allnds = features_matrix.shape[0]
-		if lbnds and allnds > lbnds and adjustRows(lbnds, features_matrix):
+		if lbnds and allnds > lbnds and adjustRows(lbnds, features_matrix, True):
 			print('WARNING, embedding matrices are reduced to the number of nodes in the labels matrix: {} -> {}'
 				.format(allnds, lbnds), file=sys.stderr)
 		# Omit dissimilarity weighting if required
@@ -423,7 +443,7 @@ def evalEmbCls(args):
 			if isinstance(features_matrix, np.ndarray) and not features_matrix.flags['OWNDATA']:
 				features_matrix = features_matrix[:lbnds, ...]
 			else:
-				reduced = adjustRows(lbnds, features_matrix)
+				reduced = adjustRows(lbnds, features_matrix, True)
 				assert reduced, 'features_matrix is expected to be reduced from {} to {} items'.format(allnds, lbnds)
 			embname = os.path.splitext(args.embedding)[0]
 			# COnsider that .nvc embeddings support multiple options on loading and should be retained
@@ -452,6 +472,9 @@ def evalEmbCls(args):
 		if dis_features_matrix is not None:
 			sm.binarize(dis_features_matrix, medbin)
 
+	assert args.metric != 'jacnop' or (features_matrix.max() <= 1 and features_matrix.min() >= -1), (
+		'Jacnop should be applied only to the features matrix normalized to 1, i.e. max(abs(mat)) = 1')
+
 	# Generate Gram (nodes similarity) matrix only -----------------------------
 	if args.mode == 'gram':
 		# Note: metric here is distance metric = 1 - sim_metric
@@ -460,8 +483,11 @@ def evalEmbCls(args):
 			metid = sm.sim_id(args.metric)
 		else:
 			metric = args.metric
+			# Explicitly assign jaccard distance because other metrics are implicitly used as distance metrics
 			if metric == 'jaccard':
 				metric = dist_jaccard
+			elif metric == 'jacnop':
+				metric = dist_jacnop
 				# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 		if dis_features_matrix is None:
 			if OPTIMIZED:
@@ -567,8 +593,11 @@ def evalEmbCls(args):
 						metid = sm.sim_id(args.metric)
 					else:
 						metric = args.metric
+						# Explicitly assign jaccard distance because other metrics are implicitly used as distance metrics
 						if metric == 'jaccard':
 							metric = dist_jaccard
+						elif metric == 'jacnop':
+							metric = dist_jacnop
 							# metric = lambda u, v: 1 - sm.sim_jaccard(u, v)
 					if dis_features_matrix is None:
 						if OPTIMIZED:

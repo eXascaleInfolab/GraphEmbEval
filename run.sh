@@ -12,8 +12,8 @@ FREEMEM="8G"  # >= 8G for youtube; 5%
 OUTP="res/algs.res"
 GRAMDIR="res/gram"
 ##METRIC=cosine  # cosine, jaccard, hamming
-METRICS="cosine jaccard"  # "cosine jaccard hamming"  # jacnop
-METRMARK=([cosine]=c [jaccard]=j [hamming]=h [jacnop]=p)  # Note: spaces are significant
+METRICS="cosine jaccard"  # "cosine jaccard hamming"  # jacnor/nopjac/norjac
+METRMARK=([cosine]=c [jaccard]=j [hamming]=h [jacnop]=p)  # Note: spaces are significant;  jacnor/nopjac/norjac
 #METRICS=cosine
 EMBDIMS=128
 CLSDIMS=''  # Disable

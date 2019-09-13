@@ -90,6 +90,7 @@ cpdef enum Similarity:
 	SIM_COSINE = 1
 	SIM_JACCARD = 2
 	SIM_HAMMING = 3
+	SIM_JACNOP = 4
 	SIM_DISSIM = 0xff
 
 # Enum of comparison functions
@@ -120,6 +121,8 @@ def sim_id(str sim):
 		return SIM_JACCARD
 	elif sim == 'hamming':
 		return SIM_HAMMING
+	elif sim == 'jacnop':
+		return SIM_JACNOP
 	# elif sim == 'dissim':
 	# 	return SIM_DISSIM
 	else:
@@ -424,7 +427,7 @@ def quantify(ValMatrixT mat not None, Comparison op, ValT cv, ValT qv=0):
 cdef ValT c_sim_cosine(ValArrayT a, ValArrayT b) nogil:
 	"""Cosine similarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -463,7 +466,7 @@ cdef ValT c_sim_cosine(ValArrayT a, ValArrayT b) nogil:
 def sim_cosine(ValArrayT a not None, ValArrayT b not None):
 	"""Cosine similarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -485,7 +488,7 @@ def sim_cosine(ValArrayT a not None, ValArrayT b not None):
 cdef ValT c_sim_jaccardwu(ValArrayT a, ValArrayT b) nogil:
 	"""(Weighted Unsigned) Jaccard similarity function for non-ngative floating point numbers
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -530,7 +533,7 @@ cdef ValT c_sim_jaccardwu(ValArrayT a, ValArrayT b) nogil:
 def sim_jaccardwu(ValArrayT a not None, ValArrayT b not None):
 	"""(Weighted Unsigned) Jaccard similarity function for arbitrary foating point numbers
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -552,7 +555,7 @@ def sim_jaccardwu(ValArrayT a not None, ValArrayT b not None):
 cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 	"""(Weighted Signed) Jaccard similarity function for arbitrary foating point numbers
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -601,7 +604,7 @@ cdef ValT c_sim_jaccard(ValArrayT a, ValArrayT b) nogil:
 def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 	"""(Weighted Signed) Jaccard similarity function for arbitrary foating point numbers
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -625,11 +628,78 @@ def sim_jaccard(ValArrayT a not None, ValArrayT b not None):
 @cython.boundscheck(False) # Turn off bounds-checking for entire function
 @cython.wraparound(False) # Turn off negative index wrapping for entire function
 @cython.initializedcheck(False) # Turn off memoryview initialization check
+cdef ValT c_sim_jacnop(ValArrayT a, ValArrayT b) nogil:
+	"""(Weighted Signed) Jaccard Normalized Probabilistic similarity function for foating point numbers E [-1, 1]
+
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
+
+	a: ValArrayT  - first array
+	b: ValArrayT  - second array
+
+	return
+		sim: ValT  - Jaccard similarity between the input arrays, E [-1, 1]
+	"""
+	# assert a is not None and b is not None and a.shape[0] == b.shape[0], (  # a != NULL
+	# 	'Valid arrays of the equal length are expected')
+	cdef:
+		double  nom = 0  # Nomerator of the (Weighted) Jaccard Index
+		double  den = 0  # Denomerator of the (Weighted) Jaccard Index
+		unsigned  i, arrsize = a.shape[0]  # Py_ssize_t
+		ValT  va, vb
+		bint  inv  # The numbers have distinct sign (inverse correlation)
+
+	for i in range(arrsize):  # prange
+		va = a[i]
+		vb = b[i]
+		inv = (va < 0) != (vb < 0)
+		va = fabsf(va)
+		vb = fabsf(vb)
+		nom += va * vb * (1 - 2 * inv)
+		den += vb if va <= vb else va
+	# Note: if both modules are 0 then sim ~= 0.5^dims ~= 0: powf(0.5, arrsize)
+	# Probability of the similarity is 0.5 on each dimension with confidence 0.5 => 0.25
+	if den != 0:
+		nom /= den
+	else:
+		nom = powf(0.25, arrsize)
+	return nom
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
+def sim_jacnop(ValArrayT a not None, ValArrayT b not None):
+	"""(Weighted Signed) Jaccard Normalized Probabilistic similarity function for foating point numbers E [-1, 1]
+
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
+
+	a: ValArrayT  - first array
+	b: ValArrayT  - second array
+
+	return
+		sim: ValT  - Jaccard similarity between the input arrays
+
+	>>> round(sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.266667
+	>>> sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)) == \
+		sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32))
+	True
+	>>> round(sim_jacnop(np.array([0, -0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	-0.266667
+	"""
+	if a.ndim != 1 or a.shape[0] != b.shape[0]:
+		raise ValueError('Valid arrays of the equal length are expected')
+	return c_sim_jacnop(a, b)
+
+
+@cython.boundscheck(False) # Turn off bounds-checking for entire function
+@cython.wraparound(False) # Turn off negative index wrapping for entire function
+@cython.initializedcheck(False) # Turn off memoryview initialization check
 cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 # cdef ValT c_sim_hamming(BoolArrayT a, BoolArrayT b) nogil:
 	"""Hamming similarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -655,7 +725,7 @@ cdef ValT c_sim_hamming(ValArrayT a, ValArrayT b) nogil:
 def sim_hamming(ValArrayT a not None, ValArrayT b not None):
 	"""(Weighted) Jaccard similarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -677,7 +747,7 @@ def sim_hamming(ValArrayT a not None, ValArrayT b not None):
 cdef ValT c_dissim(ValArrayT a, ValArrayT b) nogil:
 	"""(Weighted) Jaccard-like dissimilarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -713,7 +783,7 @@ cdef ValT c_dissim(ValArrayT a, ValArrayT b) nogil:
 def dissim(ValArrayT a not None, ValArrayT b not None):
 	"""(Weighted) Jaccard-like dissimilarity function
 
-	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]:
+	Preconditions: a is not None and b is not None and a.shape[0] == b.shape[0]
 
 	a: ValArrayT  - first array
 	b: ValArrayT  - second array
@@ -742,6 +812,8 @@ cdef SimilarityF c_sim_metric(Similarity sim):
 		return c_sim_jaccard
 	elif sim == SIM_HAMMING:
 		return c_sim_hamming
+	elif sim == SIM_JACNOP:
+		return c_sim_jacnop
 	# elif sim == SIM_DISSIM:
 	# 	return c_dissim
 	else:
