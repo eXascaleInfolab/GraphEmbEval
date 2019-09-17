@@ -130,8 +130,8 @@ def parseArgs(opts=None):
 						' Out of range values are automatically adjusted to the bound. Actual only for the NVC format.')
 	parser.add_argument("--root-dims", default=False, dest='rdims', action='store_true', help=arg_SUPPRESS) # Deprecated; 'Use only root (top) level dimensions (clusers), actual only for the NVC format. Same as "--dimensions 1"'
 	parser.add_argument("--dim-vmin", default=0, type=float, help='Minimal dimension value to be processed before the weighting, [0, 1).')
-	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming'
-						', jacnop (jaccard normalized probabilistic).')
+	parser.add_argument("-m", "--metric", default='cosine', help='Applied metric for the similarity matrics construction: cosine, jaccard, hamming.')
+						# ', jacnop (jaccard normalized probabilistic, requires input features normalized to 1 and works well only for the classification task).'
 	parser.add_argument("-b", "--binarize", default=False, action='store_true', help='Binarize the embedding minimizing the Mean Square Error.'
 						' NOTE: the median binarizaion is performed if the hamming metric is specified with this flag.')
 	parser.add_argument("-o", "--output", default=None, help='A file name for the results. Default: ./<embeds>.res or ./gtam_<embeds>.mat.')

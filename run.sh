@@ -40,8 +40,10 @@ USAGE="$0 -h | [-o <output>=res/algs.res] [-m \"{`echo $METRICS | tr ' ' ','`} \
   -a,--algorithms  - evaluationg algorithms. Default: \"$ALGORITHMS\"
   -g,--graphs  - input graphs (networks) specified by the adjacency matrix in the .mat format. Default: \"$GRAPHS\"
   --gram  - evaluate gram matrices for the specified number of embeddings instead of the embeddings accuracy, 0 disables the gram mode
-  -e,--emb-dims  - the number of dimensions in the input embeddings or any identifier to select the embeddings filename and load from the dir embs<dims>. Default: $EMBDIMS
-  --force-dims  - force the number of cluster-based dimensions to the specified --emb-dims bounding with [root-cls, total-cls]. The out of range value is adjusted to the actual bound, so <=1 means output only the root clusters as dimensions. Actual only for the NVC format
+  -e,--emb-dims  - the number of dimensions in the input embeddings or any identifier to select the embeddings filename
+ and load from the dir embs<dims>. Default: $EMBDIMS
+  --force-dims  - force the number of cluster-based dimensions to the specified --emb-dims bounding with [root-cls, total-cls].
+ The out of range value is adjusted to the actual bound, so <=1 means output only the root clusters as dimensions. Actual only for the NVC format
   -f,--free-mem  -  limit the minimal amount of the available RAM to start subsequent job. Default: $FREEMEM
   -h,--help  - help, show this usage description
 
@@ -110,7 +112,7 @@ while [ $1 ]; do
 		shift 2
 		;;
 	--gram)
-		if [ "${2::1}" = "-" ]; then
+		if [ "${2::1}" = "-" ] || [ $2 -lt 0 ] || [ $? -ne 0 ]; then
 			echo "ERROR, invalid argument value of $1: $2"
 			exit 1
 		fi
