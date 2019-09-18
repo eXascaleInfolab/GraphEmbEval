@@ -206,6 +206,9 @@ def dist_jacnop(u, v):
 	"""Weighted Jaccard Normalized Probabilistic distance metric
 
 	PREREQUISITES: the input vectors are normalized so as max(abs(x)) = 1 for each item x
+	
+	>>> round(dist_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
+	0.733333
 	"""
 	# Evalaute denominator
 	norm = np.maximum(u, v)

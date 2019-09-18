@@ -682,7 +682,7 @@ def sim_jacnop(ValArrayT a not None, ValArrayT b not None):
 	>>> round(sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	0.266667
 	>>> sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)) == \
-		sim_jacnop(np.array([0, 0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32))
+		sim_jacnop(np.array([0.2, 0.5, 0], dtype=np.float32), np.array([0, 0.8, 0.5], dtype=np.float32))
 	True
 	>>> round(sim_jacnop(np.array([0, -0.8, 0.5], dtype=np.float32), np.array([0.2, 0.5, 0], dtype=np.float32)), 6)
 	-0.266667
