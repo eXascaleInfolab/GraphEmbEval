@@ -208,8 +208,11 @@ cdef int c_binarize_median(ValMatrixT mat, bint polarize=False, float eps=1e-4) 
 			for j in range(qsize):
 				vdens[j] = 0
 			# Accumulate the number of quantified values to find the median
-			for j in range(cols):
-				vdens[<unsigned>roundf((mat[i, j] - vmin) / dmax)] += 1
+			if dmax:
+				for j in range(cols):
+					vdens[<unsigned>roundf((mat[i, j] - vmin) / dmax)] += 1
+			else:
+				vdens[0] = cols
 			# Identify index of the median
 			imed = 0  # Index of the median
 			nvals = 0  # The accumulated number of the processed values
