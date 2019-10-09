@@ -8,9 +8,7 @@ The paper:
 ```
 @inproceedings{Daor19,
 	author={Artem Lutov and Dingqi Yang and Philippe Cudr{\'e}-Mauroux},
-	title={Bridging the Gap between Community
-and Node Representations:
-Graph Embedding via Community Detection},
+	title={Bridging the Gap between Community and Node Representations: Graph Embedding via Community Detection},
 	year={2019},
 	keywords={parameter-free graph embedding, unsupervised
 learning of network representation, automatic feature extraction,
