@@ -127,7 +127,11 @@ optional arguments:
 
 ## Related Projects
 
-- [DAOR](https://github.com/eXascaleInfolab/daor)  - Parameter-free Embedding Framework for Large Graphs (Networks) based on DAOC.
+- [DAOR](https://github.com/eXascaleInfolab/daor)  - Parameter-free Embedding Framework for Large Graphs (Networks) based on [DAOC](https://github.com/eXascaleInfolab/daoc) unsupervised and parameter-free community detection.
+- [NodeSketch](https://github.com/eXascaleInfolab/NodeSketch) - Highly-Efficient Graph Embeddings via Recursive Sketching 
+- [HARP](https://github.com/eXascaleInfolab/HARP) - Hierarchical Representation Learning for Networks
+- [NetHash](https://github.com/eXascaleInfolab/NetHash) - Efficient Attributed Network Embedding via Recursive Randomized Hashing
+- [Deepwalk](https://github.com/eXascaleInfolab/deepwalk) - Online Deep Learning of Social Representations on Graphs
 - [Clubmark](https://github.com/eXascaleInfolab/clubmark) - A parallel isolation framework for benchmarking and profiling clustering (community detection) algorithms considering overlaps (covers), includes a dozen of clustering algorithms for large networks.
 - [PyExPool](https://github.com/eXascaleInfolab/PyExPool)  - multiprocess execution pool and load balancer, which provides [external] applications scheduling for the in-RAM execution on NUMA architecture with capabilities of the affinity control, CPU cache vs parallelization maximization, memory consumption and execution time constrains specification for the whole execution pool and per each executor process (called worker, executes a job).
 
